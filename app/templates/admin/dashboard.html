@@ -1,0 +1,241 @@
+{% extends "shared/base.html" %}
+{% block title %}Admin Dashboard — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+{% block content %}
+<div class="dash-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><span class="bolt">⚡</span> Admin</div>
+    <div class="sidebar-user">
+      <div class="avatar" style="background:#ef4444">A</div>
+      <div><strong>Admin</strong><br /><small>ElecSure</small></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" onclick="showSection('statsSection')">📊 Dashboard</a>
+      <a href="#" class="nav-item" onclick="showSection('usersSection')">👥 Users</a>
+      <a href="#" class="nav-item" onclick="showSection('bookingsSection')">📋 Bookings</a>
+      <a href="#" class="nav-item" onclick="showSection('leaderSection')">🏆 EL Leaderboard</a>
+      <a href="#" class="nav-item" onclick="showSection('servicesSection')">🔧 Services</a>
+    </nav>
+    <button class="sidebar-logout" onclick="logout()">🚪 Logout</button>
+  </aside>
+
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <h1 class="dash-title" id="dashTitle">Dashboard</h1>
+    </div>
+
+    <!-- Stats -->
+    <section id="statsSection" class="dash-section active">
+      <div class="stats-grid" id="statsGrid">
+        <div class="loading-card">Loading stats...</div>
+      </div>
+    </section>
+
+    <!-- Users -->
+    <section id="usersSection" class="dash-section">
+      <div class="section-toolbar">
+        <div class="filter-tabs">
+          <button class="ftab active" onclick="loadUsers('all',this)">All</button>
+          <button class="ftab" onclick="loadUsers('customer',this)">Customers</button>
+          <button class="ftab" onclick="loadUsers('electrician',this)">Electricians</button>
+        </div>
+        <input type="text" id="userSearch" placeholder="Search..." class="search-input"
+          oninput="loadUsers(currentUserRole, null, this.value)" />
+      </div>
+      <div id="usersTable" class="table-wrap"></div>
+    </section>
+
+    <!-- Bookings -->
+    <section id="bookingsSection" class="dash-section">
+      <div class="section-toolbar">
+        <div class="filter-tabs">
+          <button class="ftab active" onclick="loadAdminBookings('all',this)">All</button>
+          <button class="ftab" onclick="loadAdminBookings('REQUESTED',this)">Pending</button>
+          <button class="ftab" onclick="loadAdminBookings('ASSIGNED',this)">Assigned</button>
+          <button class="ftab" onclick="loadAdminBookings('STARTED',this)">Active</button>
+          <button class="ftab" onclick="loadAdminBookings('COMPLETED',this)">Completed</button>
+          <button class="ftab" onclick="loadAdminBookings('CANCELLED',this)">Cancelled</button>
+        </div>
+      </div>
+      <div id="adminBookingsTable" class="table-wrap"></div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section id="leaderSection" class="dash-section">
+      <div id="leaderTable" class="table-wrap"></div>
+    </section>
+
+    <!-- Services -->
+    <section id="servicesSection" class="dash-section">
+      <div id="servicesAdminTable" class="table-wrap"></div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  let currentUserRole = 'all';
+
+  (async () => {
+    requireAuth(['admin']);
+    await loadStats();
+    await loadUsers('all');
+    await loadAdminBookings('all');
+    await loadLeaderboard();
+    await loadAdminServices();
+  })();
+
+  async function loadStats() {
+    try {
+      const s = await apiGet('/api/v1/admin/stats');
+      document.getElementById('statsGrid').innerHTML = `
+      <div class="stat-card"><div class="stat-icon" style="background:#3b82f620">👤</div><div class="stat-num">${s.total_customers}</div><div class="stat-label">Customers</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:#f59e0b20">⚡</div><div class="stat-num">${s.total_electricians}</div><div class="stat-label">Electricians</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:#10b98120">✅</div><div class="stat-num">${s.available_electricians}</div><div class="stat-label">Available Now</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:#6366f120">📋</div><div class="stat-num">${s.total_bookings}</div><div class="stat-label">Total Bookings</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:#ef444420">🔴</div><div class="stat-num">${s.active_bookings}</div><div class="stat-label">Active Bookings</div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:#10b98120">💰</div><div class="stat-num">₹${s.total_revenue_inr.toLocaleString()}</div><div class="stat-label">Revenue</div></div>
+    `;
+    } catch (e) { }
+  }
+
+  async function loadUsers(role, btn, search = '') {
+    currentUserRole = role;
+    if (btn) { document.querySelectorAll('#usersSection .ftab').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+    try {
+      const params = role !== 'all' ? `role=${role}&` : '';
+      const data = await apiGet(`/api/v1/admin/users?${params}search=${search}&per_page=50`);
+      const el = document.getElementById('usersTable');
+      if (!data.items.length) { el.innerHTML = '<p style="padding:16px;color:#6b7280">No users found.</p>'; return; }
+      el.innerHTML = `<table class="data-table">
+      <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>EL Score</th><th>Active</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>${data.items.map(u => `
+        <tr>
+          <td>${u.id.substring(0,8)}</td><td>${u.name}</td><td>${u.email}</td>
+          <td>${u.phone}</td>
+          <td><span class="chip ${u.role}">${u.role}</span></td>
+          <td>${u.role==='electrician' ? u.el_score.toFixed(1) : '-'}</td>
+          <td><span class="chip ${u.is_active ? 'green' : 'red'}">${u.is_active ? 'Yes' : 'No'}</span></td>
+          <td>
+            ${u.role==='electrician' ? 
+              `<span class="chip ${u.is_restricted ? 'red' : 'green'}">${u.is_restricted ? 'RESTRICTED' : 'NORMAL'}</span>` 
+              : '-'}
+          </td>
+          <td>
+            <div style="display:flex; gap:4px">
+              <button class="btn btn-sm btn-outline" onclick="toggleUser('${u.id}')">${u.is_active ? 'Deactivate' : 'Activate'}</button>
+              <button class="btn btn-sm btn-primary" onclick="verifyUser('${u.id}')" ${u.is_verified ? 'disabled' : ''}>${u.is_verified ? 'Verified' : 'Verify'}</button>
+              ${u.role==='electrician' ? 
+                `<button class="btn btn-sm ${u.is_restricted ? 'btn-success' : 'btn-danger'}" onclick="toggleRestriction('${u.id}')">${u.is_restricted ? 'Unrestrict' : 'Restrict'}</button>` 
+                : ''}
+            </div>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    } catch (e) { }
+  }
+
+  async function toggleUser(id) {
+    try {
+      const r = await apiPost(`/api/v1/admin/users/${id}/toggle-active`, {});
+      showToast(r.message, 'success');
+      await loadUsers(currentUserRole);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function verifyUser(id) {
+    try {
+      const r = await apiPost(`/api/v1/admin/users/${id}/verify`, {});
+      showToast(r.message, 'success');
+      await loadUsers(currentUserRole);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function toggleRestriction(id) {
+    if (!confirm("Are you sure you want to toggle the restriction for this electrician?")) return;
+    try {
+      const r = await apiPost(`/api/v1/admin/electricians/${id}/toggle-restriction`, {});
+      showToast(r.message, 'success');
+      await loadUsers(currentUserRole);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function loadAdminBookings(status, btn) {
+    if (btn) { document.querySelectorAll('#bookingsSection .ftab').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+    try {
+      const params = status !== 'all' ? `status=${status}&` : '';
+      const data = await apiGet(`/api/v1/admin/bookings?${params}per_page=50`);
+      const el = document.getElementById('adminBookingsTable');
+      if (!data.items.length) { el.innerHTML = '<p style="padding:16px;color:#6b7280">No bookings found.</p>'; return; }
+      el.innerHTML = `<table class="data-table">
+      <thead><tr><th>#</th><th>Service</th><th>Customer</th><th>Electrician</th><th>Status</th><th>Amount</th><th>Pay Method</th><th>Date</th><th>Actions</th></tr></thead>
+      <tbody>${data.items.map(b => `
+        <tr>
+          <td>${b.id}</td><td>${b.service || '-'}</td><td>${b.customer || '-'}</td>
+          <td>${b.electrician || 'Unassigned'}</td>
+          <td><span class="status-chip ${b.status.toLowerCase()}">${b.status}</span></td>
+          <td>₹${b.total_amount}</td>
+          <td><span class="chip ${b.payment_type === 'offline' ? 'orange' : 'blue'}">${b.payment_type === 'offline' ? 'Cash/Direct' : 'Online'}</span></td>
+          <td>${formatDate(b.preferred_date)}</td>
+          <td>${!['COMPLETED', 'REVIEWED', 'CANCELLED'].includes(b.status) ?
+          `<button class="btn btn-sm btn-danger" onclick="forceCancel('${b.id}')">Cancel</button>` : '-'}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    } catch (e) { }
+  }
+
+  async function forceCancel(id) {
+    if (!confirm(`Force-cancel booking #${id}?`)) return;
+    try {
+      const r = await apiPost(`/api/v1/admin/bookings/${id}/force-cancel`, {});
+      showToast(r.message, 'success');
+      await loadAdminBookings('all');
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function loadLeaderboard() {
+    try {
+      const data = await apiGet('/api/v1/admin/leaderboard?limit=30');
+      const el = document.getElementById('leaderTable');
+      el.innerHTML = `<table class="data-table">
+      <thead><tr><th>Rank</th><th>Name</th><th>EL Score</th><th>Rating</th><th>Reviews</th><th>Status</th></tr></thead>
+      <tbody>${data.map(e => `
+        <tr class="${e.rank <= 3 ? 'top-rank' : ''}">
+          <td><strong>${e.rank === 1 ? '🥇' : e.rank === 2 ? '🥈' : e.rank === 3 ? '🥉' : e.rank}</strong></td>
+          <td>${e.name}</td>
+          <td><div class="mini-progress"><div style="width:${e.el_score}%;background:${e.el_score >= 70 ? '#10b981' : e.el_score >= 40 ? '#f59e0b' : '#ef4444'}"></div></div> ${e.el_score.toFixed(1)}</td>
+          <td>${e.rating ? e.rating.toFixed(1) + ' ★' : '-'}</td>
+          <td>${e.total_reviews}</td>
+          <td><span class="chip ${e.is_available ? 'green' : 'red'}">${e.is_available ? 'Available' : 'Offline'}</span></td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    } catch (e) { }
+  }
+
+  async function loadAdminServices() {
+    try {
+      const data = await apiGet('/api/v1/admin/services');
+      const el = document.getElementById('servicesAdminTable');
+      el.innerHTML = `<table class="data-table">
+      <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Active</th><th>Action</th></tr></thead>
+      <tbody>${data.map(s => `
+        <tr>
+          <td>${s.id}</td><td>${s.name}</td><td>${s.category}</td>
+          <td>₹${s.base_price}</td><td>${s.duration_minutes}m</td>
+          <td><span class="chip ${s.is_active ? 'green' : 'red'}">${s.is_active ? 'Yes' : 'No'}</span></td>
+          <td><button class="btn btn-sm btn-outline" onclick="toggleService('${s.id}')">${s.is_active ? 'Disable' : 'Enable'}</button></td>
+        </tr>`).join('')}
+      </tbody></table>`;
+    } catch (e) { }
+  }
+
+  async function toggleService(id) {
+    try {
+      const r = await apiPost(`/api/v1/admin/services/${id}/toggle`, {});
+      showToast(r.message, 'success');
+      await loadAdminServices();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+</script>
+{% endblock %}

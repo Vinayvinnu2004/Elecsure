@@ -1,0 +1,255 @@
+{% extends "shared/base.html" %}
+{% block title %}Track Your Services — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  #trackingMap { height: 300px; width: 100%; border-radius: var(--radius-card); margin-bottom: 20px; border: 1px solid var(--border-color); }
+  .map-overlay-status { position: absolute; top: 10px; right: 10px; z-index: 1000; background: #fff; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dash-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><span class="bolt">⚡</span> ElecSure</div>
+    <div class="sidebar-user">
+      <div class="avatar" id="avatarCircle" onclick="window.location='/profile'" style="cursor:pointer"
+        title="View Profile">C</div>
+      <div><strong id="sidebarName">Loading...</strong><br /><small>Customer</small></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/customer" class="nav-item">Dashboard</a>
+      <a href="/customer/track" class="nav-item active">Track Your Services</a>
+      <a href="/customer?book=1" class="nav-item">Book a Service</a>
+      <a href="/customer" class="nav-item">Analytics</a>
+      <a href="/customer" class="nav-item">My Profile</a>
+    </nav>
+    <button class="sidebar-logout" onclick="logout()">Logout</button>
+  </aside>
+
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <h1 class="dash-title" id="dashTitle">Track Your Services</h1>
+      <div class="topbar-right"><span id="topbarName"></span></div>
+    </div>
+
+    <!-- Track Your Services with Filters -->
+    <section id="allBookingsSection" class="dash-section active">
+      <div class="section-toolbar">
+        <div class="filter-tabs">
+          <button class="ftab active" onclick="filterBookings('all',this)">All</button>
+          <button class="ftab" onclick="filterBookings('REQUESTED',this)">Requested</button>
+          <button class="ftab" onclick="filterBookings('ASSIGNED',this)">Assigned</button>
+          <button class="ftab" onclick="filterBookings('ACCEPTED',this)">Accepted</button>
+          <button class="ftab" onclick="filterBookings('STARTED',this)">In Progress</button>
+          <button class="ftab" onclick="filterBookings('COMPLETED',this)">Completed</button>
+          <button class="ftab" onclick="filterBookings('CANCELLED',this)">Cancelled</button>
+        </div>
+      </div>
+      <div id="bookingsList" class="cards-grid">
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="bookModal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeModal('bookModal')"></div>
+  <div class="modal-card" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="modalTitle">Booking Details</h3><button onclick="closeModal('bookModal')">&times;</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let allBookings = [];
+
+  (async () => {
+    requireAuth(['customer']);
+    document.getElementById('sidebarName').textContent = localStorage.getItem('userName') || '';
+    document.getElementById('topbarName').textContent = 'Hi, ' + (localStorage.getItem('userName') || '');
+    document.getElementById('avatarCircle').textContent = (localStorage.getItem('userName') || 'C')[0].toUpperCase();
+    loadProfile().catch(() => { });
+    loadBookings().catch(() => { });
+  })();
+
+  async function loadProfile() {
+    try {
+      const p = await apiGet('/api/v1/users/me');
+      document.getElementById('sidebarName').textContent = p.name || '';
+      document.getElementById('topbarName').textContent = 'Hi, ' + (p.name || '');
+      document.getElementById('avatarCircle').textContent = (p.name || 'C')[0].toUpperCase();
+    } catch (e) { }
+  }
+
+  async function loadBookings() {
+    try {
+      const data = await apiGet('/api/v1/bookings/my?per_page=50');
+      allBookings = data.items || [];
+      renderBookings(allBookings);
+    } catch (e) {
+      document.getElementById('bookingsList').innerHTML = '<p style="color:var(--red);padding:16px">Failed to load bookings.</p>';
+    }
+  }
+
+  function renderBookings(bookings) {
+    const el = document.getElementById('bookingsList');
+    if (!bookings.length) { el.innerHTML = '<div class="empty-state">No matching bookings.</div>'; return; }
+    const statusLabel = { 'REQUESTED': 'Requested', 'ASSIGNED': 'Assigned', 'ACCEPTED': 'Accepted', 'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Completed', 'CANCELLED': 'Cancelled' };
+    el.innerHTML = bookings.map(b => `
+    <div class="booking-card status-${b.status.toLowerCase()}" onclick="openBookingModal('${b.id}')">
+      <div class="booking-card-top">
+        <strong>${b.service ? b.service.name : 'Service'}</strong>
+        <span class="status-chip ${b.status.toLowerCase()}">${statusLabel[b.status] || b.status}</span>
+      </div>
+      <div class="booking-card-meta">📅 ${formatDate(b.preferred_date)} &nbsp;|&nbsp; ₹${b.total_amount}</div>
+      <div class="booking-card-id">#${b.id}</div>
+    </div>`).join('');
+  }
+
+  function filterBookings(status, btn) {
+    document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (status === 'all') { renderBookings(allBookings); return; }
+    if (status === 'COMPLETED') { renderBookings(allBookings.filter(b => b.status === 'COMPLETED' || b.status === 'REVIEWED')); return; }
+    renderBookings(allBookings.filter(b => b.status === status));
+  }
+
+  // ── Real-time Tracking Logic ──────────────────────────────────────
+  let trackMap = null, customerMarker = null, electricianMarker = null, trackInterval = null;
+
+  async function openBookingModal(id) {
+    try {
+      // Clear previous tracking
+      if (trackInterval) { clearInterval(trackInterval); trackInterval = null; }
+      if (trackMap) { trackMap.remove(); trackMap = null; }
+      
+      const b = await apiGet('/api/v1/bookings/' + id);
+      document.getElementById('modalTitle').textContent = 'Booking #' + b.id;
+      const statusLabel = { 'REQUESTED': 'Requested', 'ASSIGNED': 'Electrician Assigned', 'ACCEPTED': 'Electrician Accepted', 'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Completed', 'CANCELLED': 'Cancelled' };
+
+      const tlSteps = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED', 'COMPLETED'];
+      const tlOrder = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'STARTED', 'COMPLETED', 'REVIEWED'];
+      const tlLabels = { 'REQUESTED': 'Requested', 'ASSIGNED': 'Assigned', 'ACCEPTED': 'Accepted', 'STARTED': 'In Progress', 'COMPLETED': 'Completed' };
+      const curIdx = tlOrder.indexOf(b.status);
+      let tlHtml = '';
+      if (b.status !== 'CANCELLED') {
+        tlHtml = '<div style="margin:0 0 16px;padding:16px;background:#f9fafb;border-radius:var(--radius)">' +
+          '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin-bottom:12px">Service Status</div>' +
+          '<div class="booking-timeline">' +
+          tlSteps.map(key => {
+            const sIdx = tlOrder.indexOf(key);
+            const cls = sIdx < curIdx ? 'done' : sIdx === curIdx ? 'active' : '';
+            return '<div class="tl-step ' + cls + '">' +
+              '<div class="tl-dot">' + (cls === 'done' ? '✓' : (sIdx + 1)) + '</div>' +
+              '<div class="tl-label">' + tlLabels[key] + '</div></div>';
+          }).join('') +
+          '</div></div>';
+      }
+
+      const trackingHtml = (b.status === 'ACCEPTED' || b.status === 'STARTED') 
+        ? '<div id="trackingMapContainer" style="position:relative"><div id="trackingMap" style="border-radius: var(--radius-card) var(--radius-card) 0 0;"></div><div id="mapStatus" class="map-overlay-status">📡 Initializing...</div>' + 
+          '<a href="/customer/track-electrician/' + b.id + '" class="sim-btn" style="text-decoration:none; display:flex; justify-content:center; padding:12px; background:var(--navy); color:#fff; border-radius: 0 0 var(--radius-card) var(--radius-card); font-weight:bold;">View Enhanced Live Tracking (Route & ETA)</a></div>' 
+        : '';
+
+      let html = tlHtml + trackingHtml + '<div class="info-grid">' +
+        '<div class="info-item"><label>Status</label><span class="status-chip ' + b.status.toLowerCase() + '">' + (statusLabel[b.status] || b.status) + '</span></div>' +
+        '<div class="info-item"><label>Service</label><span>' + (b.service ? b.service.name : '—') + '</span></div>' +
+        '<div class="info-item"><label>Date</label><span>' + formatDate(b.preferred_date) + '</span></div>' +
+        '<div class="info-item"><label>Amount</label><span>₹' + b.total_amount + '</span></div>' +
+        '<div class="info-item" style="grid-column:1/-1"><label>Address</label><span>' + b.address + '</span></div>' +
+        '<div class="info-item" style="grid-column:1/-1"><label>Problem</label><span>' + b.problem_description + '</span></div>' +
+        '</div>';
+      
+      document.getElementById('modalBody').innerHTML = html;
+      const footer = document.getElementById('modalFooter'); footer.innerHTML = '';
+      if (b.status === 'REQUESTED') footer.innerHTML += '<button class="btn btn-danger" onclick="cancelBooking(\'' + b.id + '\')">Cancel Booking</button>';
+      document.getElementById('bookModal').classList.remove('hidden');
+
+      // Initialize map if needed
+      if (b.status === 'ACCEPTED' || b.status === 'STARTED') {
+        setTimeout(() => initTrackingMap(b), 100);
+      }
+    } catch (e) { console.error('Modal toggle error:', e); showToast('Failed to load booking', 'error'); }
+  }
+
+  function initTrackingMap(booking) {
+    const mapEl = document.getElementById('trackingMap');
+    if (!mapEl) return;
+
+    const custLat = booking.latitude || 18.4386;
+    const custLng = booking.longitude || 79.1288;
+
+    trackMap = L.map('trackingMap').setView([custLat, custLng], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(trackMap);
+
+    const customerIcon = L.divIcon({
+      html: '<div style="background:#1e293b; color:#fff; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #fff; box-shadow:0 0 10px rgba(0,0,0,0.3)">🏠</div>',
+      iconSize: [30, 30], iconAnchor: [15, 15]
+    });
+    customerMarker = L.marker([custLat, custLng], { icon: customerIcon }).addTo(trackMap).bindPopup('Service Location');
+
+    const electricianIcon = L.divIcon({
+      html: '<div style="background:#f59e0b; color:#fff; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid #fff; box-shadow:0 0 15px rgba(245,158,11,0.5)">⚡</div>',
+      iconSize: [34, 34], iconAnchor: [17, 17]
+    });
+    
+    fetchElectricianLocation(booking.id, electricianIcon);
+    trackInterval = setInterval(() => fetchElectricianLocation(booking.id, electricianIcon), 5000);
+  }
+
+  async function fetchElectricianLocation(bookingId, icon) {
+    try {
+      const data = await apiGet('/api/v1/location/' + bookingId);
+      const statusEl = document.getElementById('mapStatus');
+      
+      if (data.electrician_lat && data.electrician_lng) {
+        const pos = [data.electrician_lat, data.electrician_lng];
+        if (!electricianMarker) {
+          electricianMarker = L.marker(pos, { icon: icon }).addTo(trackMap).bindPopup('Electrician Position');
+        } else {
+          electricianMarker.setLatLng(pos);
+        }
+        if (statusEl) {
+          statusEl.textContent = '🟢 Live Tracking';
+          statusEl.style.color = '#10B981';
+        }
+      } else {
+        if (statusEl) {
+          statusEl.textContent = '🟠 Searching for electrician...';
+          statusEl.style.color = '#F59E0B';
+        }
+      }
+    } catch (e) { }
+  }
+
+  async function cancelBooking(id) {
+    if (!confirm('Cancel this booking?')) return;
+    try {
+      await apiPost('/api/v1/bookings/' + id + '/cancel', {});
+      showToast('Cancelled!', 'success');
+      closeModal('bookModal');
+      await loadBookings();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+    if (trackInterval) { clearInterval(trackInterval); trackInterval = null; }
+    if (trackMap) { trackMap.remove(); trackMap = null; }
+  }
+</script>
+{% endblock %}

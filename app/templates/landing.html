@@ -1,0 +1,239 @@
+{% extends "shared/base.html" %}
+{% block title %}ElecSure — Trusted Electricians in Karimnagar{% endblock %}
+
+{% block content %}
+
+<!-- HERO (unchanged) -->
+<section class="hero-clean">
+  <div class="hero-clean-inner">
+    <div class="hero-text-col">
+      <div class="hero-tag-pill">Karimnagar's #1 Electrical Service Platform</div>
+      <h1 class="hero-headline">
+        Protecting Homes.<br />
+        <span class="hero-headline-accent">Powering Peace of Mind.</span>
+      </h1>
+      <p class="hero-sub">
+        Book verified, background-checked electricians in minutes.
+        Real-time tracking, transparent pricing, and EL Score–ranked professionals
+        across Karimnagar district.
+      </p>
+      <div class="hero-trust-row">
+        <div class="trust-stat"><span class="trust-num">500+</span><span class="trust-label">Electricians</span></div>
+        <div class="trust-divider"></div>
+        <div class="trust-stat"><span class="trust-num">200+</span><span class="trust-label">Services</span></div>
+        <div class="trust-divider"></div>
+        <div class="trust-stat"><span class="trust-num">4.8★</span><span class="trust-label">Avg Rating</span></div>
+        <div class="trust-divider"></div>
+        <div class="trust-stat"><span class="trust-num">30 min</span><span class="trust-label">Response</span></div>
+      </div>
+      <div class="hero-btn-row" id="heroBtnRow">
+        <a href="/register" class="btn btn-primary btn-lg">Book a Service</a>
+        <a href="/register?role=electrician" class="btn btn-outline btn-lg">Join as Electrician</a>
+      </div>
+    </div>
+    <div class="hero-logo-col">
+      <img src="/static/img/logo.jpg" alt="ElecSure Logo" class="hero-logo-img" />
+      <div class="hero-logo-caption">
+        <span class="hlc-dot"></span> Live services available now in Karimnagar
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Simple Process</span>
+      <h2>How ElecSure Works</h2>
+      <p>Book a verified electrician in 3 easy steps</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">01</div>
+        <div class="step-icon">🔍</div>
+        <h3>Choose a Service</h3>
+        <p>Browse 200+ electrical services — from wiring repairs to appliance installations and safety audits.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">02</div>
+        <div class="step-icon">📅</div>
+        <h3>Pick a Time Slot</h3>
+        <p>Select a convenient time slot. Our EL Score system assigns the best-ranked available electrician.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">03</div>
+        <div class="step-icon">📍</div>
+        <h3>Track &amp; Relax</h3>
+        <p>Track the electrician in real-time. Pay securely after service completion.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section class="section section-alt" id="services">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">What We Fix</span>
+      <h2>Our Services</h2>
+      <p>Comprehensive electrical services for your home and office</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Electrical Appliance Repair')">
+        <div class="service-icon">🔧</div>
+        <h3>Appliance Repair</h3>
+        <p>Washing machines, refrigerators, ACs, TVs, microwaves, computers and 40+ more appliances</p>
+        <span class="service-price">From ₹599</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Wiring & Circuit Repairs')">
+        <div class="service-icon">⚡</div>
+        <h3>Wiring &amp; Circuit Repairs</h3>
+        <p>Short circuits, MCB tripping, burnt wire replacement, earthing faults and power failures</p>
+        <span class="service-price">From ₹499</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Lighting Services')">
+        <div class="service-icon">💡</div>
+        <h3>Lighting</h3>
+        <p>LED installation, ceiling lights, smart lights, outdoor lighting and energy-efficient upgrades</p>
+        <span class="service-price">From ₹299</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Installations')">
+        <div class="service-icon">🔌</div>
+        <h3>Installations</h3>
+        <p>Fans, geysers, switchboards, CCTV cameras, UPS systems and dedicated circuits</p>
+        <span class="service-price">From ₹399</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Safety Checks & Inspections')">
+        <div class="service-icon">🛡️</div>
+        <h3>Safety Inspections</h3>
+        <p>Full electrical audit, fire risk assessment, RCCB/ELCB testing and earthing checks</p>
+        <span class="service-price">From ₹349</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Power Backup Services')">
+        <div class="service-icon">🔋</div>
+        <h3>Power Backup</h3>
+        <p>Inverter installation and repair, battery replacement, changeover switch setup</p>
+        <span class="service-price">From ₹549</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebarWithCategory('Electrical Service Packages')">
+        <div class="service-icon">📦</div>
+        <h3>Service Packages</h3>
+        <p>Complete home wiring, safety audit bundles, festival lighting and renovation packages</p>
+        <span class="service-price">From ₹1,499</span>
+      </div>
+      <div class="service-card" onclick="openServicesSidebar()" style="border:2px dashed #f59e0b">
+        <div class="service-icon">🔍</div>
+        <h3>Browse All Services</h3>
+        <p>Search across all 200+ services and categories</p>
+        <span class="service-price">View All →</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EL SCORE -->
+<section class="section" id="about">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Our Edge</span>
+      <h2>The EL Score System</h2>
+      <p>We rank electricians by performance — you always get the best.</p>
+    </div>
+    <div class="el-score-grid">
+      <div class="el-card"><span>✅</span>
+        <div>
+          <h4>Reliability</h4>
+          <p>Scored on availability, slot completion, and punctuality</p>
+        </div>
+      </div>
+      <div class="el-card"><span>⭐</span>
+        <div>
+          <h4>Customer Reviews</h4>
+          <p>5-star ratings directly impact EL Score in real-time</p>
+        </div>
+      </div>
+      <div class="el-card"><span>⚡</span>
+        <div>
+          <h4>Speed</h4>
+          <p>Faster service completions earn bonus points</p>
+        </div>
+      </div>
+      <div class="el-card"><span>🔧</span>
+        <div>
+          <h4>Skills &amp; Toolkit</h4>
+          <p>Advanced toolkit and broader skills = higher score</p>
+        </div>
+      </div>
+      <div class="el-card"><span>🌱</span>
+        <div>
+          <h4>Fair to New Electricians</h4>
+          <p>New electricians start at 65 and get fair exposure</p>
+        </div>
+      </div>
+      <div class="el-card"><span>📊</span>
+        <div>
+          <h4>7-Component Formula</h4>
+          <p>Rating, reviews, toolkit, cancellations, failures, daily slots, experience</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container" style="text-align:center">
+    <h2>Ready to get started?</h2>
+    <p>Serving Karimnagar district — reliable electricians near you.</p>
+    <div class="hero-cta" id="ctaBtnRow" style="justify-content:center;margin-top:24px">
+      <a href="/register" class="btn btn-primary btn-lg">Book a Service</a>
+      <a href="/register?role=electrician" class="btn btn-ghost btn-lg">I'm an Electrician</a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  function openServicesSidebarWithCategory(category) {
+    openServicesSidebar();
+    setTimeout(() => {
+      document.querySelectorAll('.srv-cat').forEach(cat => {
+        const title = cat.querySelector('.srv-cat-title');
+        if (title && title.textContent.trim().includes(category.split('(')[0].trim().slice(0, 14))) {
+          cat.classList.add('open');
+          cat.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    }, 120);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const role = localStorage.getItem('role');
+    const token = localStorage.getItem('token');
+    if (token && role) {
+      const url = role === 'electrician' ? '/electrician' : '/customer';
+      const label = role === 'electrician' ? 'Go to Dashboard' : 'Book a Job';
+      const secondary = role === 'electrician' ? '/electrician#slotsSection' : '#services';
+      const secondaryLabel = role === 'electrician' ? 'Manage Slots' : 'View Services';
+
+      const heroRow = document.getElementById('heroBtnRow');
+      if (heroRow) {
+        heroRow.innerHTML = `
+          <a href="${url}" class="btn btn-primary btn-lg">${label}</a>
+          <a href="${secondary}" class="btn btn-outline btn-lg">${secondaryLabel}</a>
+        `;
+      }
+      const ctaRow = document.getElementById('ctaBtnRow');
+      if (ctaRow) {
+        ctaRow.innerHTML = `
+          <a href="${url}" class="btn btn-primary btn-lg">${label}</a>
+          <a href="${secondary}" class="btn btn-ghost btn-lg">${secondaryLabel}</a>
+        `;
+      }
+    }
+  });
+</script>
+{% endblock %}

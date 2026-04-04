@@ -1,0 +1,481 @@
+{% extends "shared/base.html" %}
+{% block title %}Register — ElecSure{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<div class="auth-container">
+  <div class="auth-card auth-card-wide" id="regCard">
+    <div class="auth-logo"><a href="/"><span class="bolt">⚡</span> ElecSure</a></div>
+
+    <!-- Step 1: Registration Form -->
+    <div id="stepRegistration">
+      <h2 id="formTitle">Create Account</h2>
+      <div class="role-toggle">
+        <button id="btnCustomer" class="role-btn active" onclick="setRole('customer')">👤 I'm a Customer</button>
+        <button id="btnElectrician" class="role-btn" onclick="setRole('electrician')">⚡ I'm an Electrician</button>
+      </div>
+
+      <div id="alertBox" class="alert hidden"></div>
+
+      <form id="registerForm" class="auth-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name <span style="color:red">*</span></label>
+            <input type="text" name="name" id="name" placeholder="Your full name" required />
+          </div>
+          <div class="form-group">
+            <label>Email Address <span style="color:red">*</span></label>
+            <input type="email" name="email" id="email" placeholder="you@example.com" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Mobile Number <span style="color:red">*</span></label>
+            <input type="tel" name="phone" id="phone" placeholder="9876543210" required maxlength="10"
+              pattern="[0-9]{10}" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+          </div>
+          <div class="form-group" id="altPhoneGroup" style="display:none">
+            <label>Alternate Phone <span style="color:red">*</span></label>
+            <input type="tel" name="alternate_phone" id="alternate_phone" placeholder="9876500000" maxlength="10"
+              pattern="[0-9]{10}" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Password <span style="color:red">*</span></label>
+            <div class="input-eye">
+              <input type="password" name="password" id="password" placeholder="Min 8 chars, uppercase, number, symbol"
+                required />
+              <button type="button" onclick="togglePwd('password')" class="eye-btn">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Confirm Password <span style="color:red">*</span></label>
+            <input type="password" name="confirm_password" id="confirm_password" placeholder="Repeat password"
+              required />
+          </div>
+        </div>
+
+        <div class="form-section-label">📍 Address Details</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Flat / House No. <span style="color:red">*</span></label>
+            <input type="text" name="flat_no" id="flat_no" placeholder="e.g. Flat 2B, Galaxy Apts" required />
+          </div>
+          <div class="form-group">
+            <label>Landmark <span style="color:red">*</span></label>
+            <input type="text" name="landmark" id="landmark" placeholder="e.g. Near Post Office" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Village / Area <span style="color:red">*</span></label>
+            <input type="text" name="village" id="village" placeholder="e.g. Banjara Hills" required />
+          </div>
+          <div class="form-group">
+            <label>Pincode <span style="color:red">*</span></label>
+            <select name="pincode" id="pincode" class="pincode-select" required>
+              <option value="">Select Pincode</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>District</label>
+            <input type="text" name="district" id="district" value="Karimnagar" readonly
+              style="background:var(--gray-100)" />
+          </div>
+          <div class="form-group">
+            <label>State <span style="color:red">*</span></label>
+            <input type="text" name="state" id="state" value="Telangana" required />
+          </div>
+        </div>
+
+        <div id="elecFields" style="display:none">
+          <div class="form-section-label">⚡ Professional Details</div>
+          <div class="form-group">
+            <label>Main Skill Category <span style="color:red">*</span></label>
+            <select id="regMainSkill" onchange="loadRegSubSkills(this.value)">
+              <option value="">Select your main skill area</option>
+              <option>Electrical Appliance Repair</option>
+              <option>Wiring &amp; Circuit Repairs</option>
+              <option>Lighting Services</option>
+              <option>Installations</option>
+              <option>Safety Checks &amp; Inspections</option>
+              <option>Power Backup Services</option>
+              <option>Electrical Service Packages</option>
+            </select>
+          </div>
+          <div id="regSubSkillGroup" style="display:none; margin-top:10px">
+            <label>Sub Skills <span style="color:red">*</span></label>
+            <div id="regSubSkillCheckboxes" class="skills-grid"></div>
+            <input type="hidden" name="skills" id="skills" />
+            <input type="hidden" name="primary_skill" id="primary_skill" />
+          </div>
+          <div class="form-row" style="margin-top:15px">
+            <div class="form-group">
+              <label>Experience (years) <span style="color:red">*</span></label>
+              <input type="number" name="experience_years" id="experience_years" min="0" max="60"
+                placeholder="e.g. 5" />
+            </div>
+            <div class="form-group">
+              <label>Toolkit Available <span style="color:red">*</span></label>
+              <select name="toolkit" id="toolkit">
+                <option value="none">None</option>
+                <option value="basic">Basic</option>
+                <option value="advanced">Advanced</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="regBtn">
+          <span id="regText">Send Verification Code</span>
+          <span id="regSpinner" class="spinner hidden"></span>
+        </button>
+      </form>
+
+      <div class="auth-divider" style="margin:18px 0">or register quickly</div>
+
+      <a href="/api/v1/auth/google/login?mode=register&role=customer" class="btn-google" id="googleRegBtn">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" height="20" alt="G">
+        Sign up with Google
+      </a>
+
+      <div class="auth-links" style="text-align:center;margin-top:16px">
+        Already have an account? <a href="/login">Login here</a>
+      </div>
+    </div>
+
+    <!-- Step 2: OTP Verification -->
+    <div id="stepOTP" class="hidden" style="max-width:400px; margin:0 auto; text-align:center; padding: 20px 0">
+      <h2>Verify Your Identity</h2>
+      <p class="auth-sub" id="otpSub">We've sent a verification code to your email.</p>
+
+      <div id="otpAlertBox" class="alert hidden"></div>
+
+      <!-- Email OTP Area -->
+      <div style="margin-top:20px">
+        <label
+          style="font-size:12px; font-weight:700; color:var(--gray-500); text-transform:uppercase; letter-spacing:0.05em">Verification
+          Code</label>
+        <div class="otp-input-container email-otp" style="display:flex;gap:8px;justify-content:center;margin:10px 0">
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e1" required autofocus />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e2" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e3" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e4" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e5" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e6" required />
+        </div>
+      </div>
+
+      <button onclick="verifyAccount()" class="btn btn-primary btn-block" id="verifyBtn">
+        <span id="verifyText">Finish Registration</span>
+        <span id="verifySpinner" class="spinner hidden"></span>
+      </button>
+
+      <div class="auth-links" style="margin-top:24px">
+        Didn't receive the code?
+        <button onclick="resendOTP()" id="resendBtn" class="link-btn">Resend Code</button>
+        <span id="resendTimer" class="hidden" style="color:var(--gray-500);font-size:13px"> (Wait <span
+            id="timerSec">60</span>s)</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px;
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .otp-digit {
+    width: 44px;
+    height: 52px;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+    border: 2px solid var(--gray-200);
+    border-radius: 8px;
+    background: var(--gray-50);
+    transition: all 0.2s;
+  }
+
+  .otp-digit:focus {
+    border-color: var(--primary);
+    background: #fff;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(30, 58, 95, 0.1);
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    font-family: inherit;
+  }
+
+  .link-btn:disabled {
+    color: var(--gray-400);
+    cursor: not-allowed;
+  }
+
+  .btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: var(--radius-sm);
+    background: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    color: #374151;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    margin-bottom: 4px;
+  }
+
+  .btn-google:hover {
+    background: #f9fafb;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentRole = 'customer';
+  let registeredEmail = '';
+
+  // Show OAuth error from redirect (e.g. if account not found during login)
+  // Pre-fill from Google OAuth if available
+  const urlParams = new URLSearchParams(window.location.search);
+  const socialEmail = urlParams.get('email');
+  const socialName = urlParams.get('name');
+  const socialGoogleId = urlParams.get('google_id');
+  const socialMode = urlParams.get('mode') === 'social_register';
+  const _oauthErr = urlParams.get('error');
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (_oauthErr) {
+      const msgs = {
+        needs_registration: 'Your Google account is not registered yet. Please sign up here first.',
+        access_denied: 'Google sign-in was cancelled.',
+        google_failed: 'Google sign-in failed. Please try again.',
+      };
+      const box = document.getElementById('alertBox');
+      box.textContent = msgs[_oauthErr] || `Error: ${_oauthErr}`;
+      box.className = 'alert alert-error';
+    }
+
+    const urlRole = urlParams.get('role');
+    if (urlRole === 'electrician') setRole('electrician');
+
+    if (socialMode) {
+      if (socialEmail) document.getElementById('email').value = socialEmail;
+      if (socialName) document.getElementById('name').value = socialName;
+
+      const box = document.getElementById('alertBox');
+      box.textContent = "Almost there! Please fill in your remaining details to complete your account.";
+      box.className = 'alert alert-info';
+    }
+
+    const sel = document.getElementById('pincode');
+    if (sel && typeof KARIMNAGAR_PINCODES !== 'undefined') {
+      Object.entries(KARIMNAGAR_PINCODES).forEach(([pin, data]) => {
+        sel.insertAdjacentHTML('beforeend', `<option value="${pin}">${pin} — ${data.area}</option>`);
+      });
+    }
+  });
+
+  function setRole(role) {
+    currentRole = role;
+    document.getElementById('btnCustomer').classList.toggle('active', role === 'customer');
+    document.getElementById('btnElectrician').classList.toggle('active', role === 'electrician');
+
+    const isElec = role === 'electrician';
+    document.getElementById('elecFields').style.display = isElec ? 'block' : 'none';
+    document.getElementById('altPhoneGroup').style.display = isElec ? 'flex' : 'none';
+
+    // Dynamically toggle required attributes for conditional fields
+    document.getElementById('alternate_phone').required = isElec;
+    document.getElementById('regMainSkill').required = isElec;
+    document.getElementById('experience_years').required = isElec;
+
+    // Dynamically update Google OAuth linking URL with selected role
+    const gBtn = document.getElementById('googleRegBtn');
+    if (gBtn) {
+      gBtn.href = `/api/v1/auth/google/login?mode=register&role=${role}`;
+    }
+  }
+
+  function loadRegSubSkills(mainCat) {
+    const sg = document.getElementById('regSubSkillGroup');
+    const cb = document.getElementById('regSubSkillCheckboxes');
+    if (!mainCat) { sg.style.display = 'none'; return; }
+    const catKey = Object.keys(SERVICES_TAXONOMY).find(k => k === mainCat || k.includes(mainCat.split('&')[0].trim()));
+    const catData = catKey ? SERVICES_TAXONOMY[catKey] : null;
+    if (!catData) { sg.style.display = 'none'; return; }
+    sg.style.display = 'block';
+    cb.innerHTML = '';
+    Object.keys(catData.subcategories).forEach((sub, i) => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:6px;border-radius:4px;border:1px solid var(--gray-200)';
+      label.innerHTML = `<input type="checkbox" value="${sub}" onchange="updateRegSkills()" style="accent-color:var(--amber)"> ${sub}`;
+      cb.appendChild(label);
+    });
+    document.getElementById('primary_skill').value = mainCat;
+  }
+
+  function updateRegSkills() {
+    const checked = Array.from(document.querySelectorAll('#regSubSkillCheckboxes input:checked')).map(c => c.value);
+    document.getElementById('skills').value = checked.join(',');
+  }
+
+  // OTP Auto-focus
+  function setupOtpFocus(selector) {
+    const inputs = document.querySelectorAll(selector);
+    inputs.forEach((d, idx) => {
+      d.addEventListener('input', (e) => {
+        if (e.target.value && idx < inputs.length - 1) inputs[idx + 1].focus();
+      });
+      d.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && idx > 0) inputs[idx - 1].focus();
+      });
+    });
+  }
+  setupOtpFocus('.email-code');
+  setupOtpFocus('.mobile-code');
+
+  document.getElementById('registerForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('regBtn');
+    const txt = document.getElementById('regText');
+    const spin = document.getElementById('regSpinner');
+    btn.disabled = true; txt.classList.add('hidden'); spin.classList.remove('hidden');
+
+    const fd = new FormData(e.target);
+    const data = Object.fromEntries(fd.entries());
+
+    if (socialMode && socialGoogleId) {
+      data.google_id = socialGoogleId;
+      data.auth_provider = 'google';
+    }
+
+    // Explicit Sub-Skill Validation
+    if (currentRole === 'electrician' && !data.skills) {
+      showAlert('Please select at least one sub skill', 'error');
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+      return;
+    }
+
+    data.district = 'Karimnagar';
+    if (data.experience_years) data.experience_years = parseInt(data.experience_years);
+
+    const endpoint = currentRole === 'electrician' ? '/api/v1/auth/register/electrician' : '/api/v1/auth/register/customer';
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || 'Registration failed');
+
+      registeredEmail = data.email;
+      document.getElementById('otpSub').innerHTML = `We've sent a code to <strong>${registeredEmail}</strong>`;
+      showStep('OTP');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  });
+
+  function showStep(step) {
+    document.getElementById('stepRegistration').classList.toggle('hidden', step !== 'Registration');
+    document.getElementById('stepOTP').classList.toggle('hidden', step !== 'OTP');
+    if (step === 'OTP') {
+      document.getElementById('regCard').classList.remove('auth-card-wide');
+      document.getElementById('regCard').style.maxWidth = '450px';
+    }
+  }
+
+  async function verifyAccount() {
+    const code = Array.from(document.querySelectorAll('.email-code')).map(d => d.value).join('');
+
+    if (code.length < 6) {
+      showAlert("Please enter the 6-digit verification code", "error", "otpAlertBox");
+      return;
+    }
+
+    const btn = document.getElementById('verifyBtn');
+    const txt = document.getElementById('verifyText');
+    const spin = document.getElementById('verifySpinner');
+    btn.disabled = true; txt.classList.add('hidden'); spin.classList.remove('hidden');
+
+    try {
+      const res = await fetch('/api/v1/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: registeredEmail, code }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || 'Verification failed');
+
+      localStorage.setItem('token', json.access_token);
+      localStorage.setItem('role', json.role);
+      localStorage.setItem('userName', json.name);
+      showToast('✅ Email verified! Welcome to ElecSure.', 'success');
+
+      setTimeout(() => {
+        const role = json.role;
+        if (role === 'electrician') window.location = '/electrician';
+        else if (role === 'admin') window.location = '/admin';
+        else window.location = '/customer';
+      }, 1000);
+    } catch (err) {
+      showAlert(err.message, 'error', 'otpAlertBox');
+    } finally {
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  }
+
+  async function resendOTP() {
+    try {
+      const res = await fetch(`/api/v1/auth/resend-otp?email=${encodeURIComponent(registeredEmail)}`, { method: 'POST' });
+      if (!res.ok) throw new Error('Resend failed');
+      showToast('📧 New code sent to your email!');
+      startCooldown();
+    } catch (err) { showAlert(err.message, 'error', 'otpAlertBox'); }
+  }
+
+  function startCooldown() {
+    let cd = 60;
+    const btn = document.getElementById('resendBtn');
+    btn.disabled = true;
+    document.getElementById('resendTimer').classList.remove('hidden');
+    const iv = setInterval(() => {
+      cd--; document.getElementById('timerSec').textContent = cd;
+      if (cd <= 0) { clearInterval(iv); btn.disabled = false; document.getElementById('resendTimer').classList.add('hidden'); }
+    }, 1000);
+  }
+</script>
+{% endblock %}

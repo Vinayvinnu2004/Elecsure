@@ -1,0 +1,75 @@
+{% extends "shared/base.html" %}
+{% block title %}My Profile — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+{% block content %}
+<div style="max-width:720px;margin:40px auto;padding:0 24px">
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:32px">
+    <div class="avatar" id="profileAvatar" style="width:64px;height:64px;font-size:28px">U</div>
+    <div>
+      <h2 id="profileName" style="margin:0;color:var(--navy)">Loading...</h2>
+      <p id="profileRole" style="margin:4px 0 0;color:var(--gray-500);font-size:14px;text-transform:capitalize"></p>
+    </div>
+    <a href="javascript:history.back()" class="btn btn-outline" style="margin-left:auto">← Back</a>
+  </div>
+  <div class="profile-card" id="profileDetails">
+    <div class="loading-card">Loading profile...</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (async () => {
+    requireAuth();
+    try {
+      const p = await apiGet('/api/v1/users/me');
+      const isElec = p.role === 'electrician';
+      const cProf = p.customer_profile || {};
+      const eProf = p.electrician_profile || {};
+      // Merge for display: address from customer profile, professional info from electrician profile
+      const prof = { ...cProf, ...eProf };
+
+      document.getElementById('profileAvatar').textContent = (p.name || 'U')[0].toUpperCase();
+      document.getElementById('profileName').textContent = p.name || '—';
+      document.getElementById('profileRole').textContent = p.role || '';
+
+      const parts = [prof.flat_no, prof.landmark, prof.village].filter(x => x && x.trim());
+      const compositeAddr = parts.length > 0 ? parts.join(', ') : '—';
+      
+      document.getElementById('profileDetails').innerHTML = `
+          <h3 style="margin-bottom:20px;padding-bottom:12px;border-bottom:2px solid var(--gray-100);color:var(--navy)">Profile Details</h3>
+          <div class="info-grid">
+            <div class="info-item"><label>Full Name</label><span>${p.name || '—'}</span></div>
+            <div class="info-item"><label>Email</label><span>${p.email || '—'}</span></div>
+            <div class="info-item"><label>Mobile</label><span>${p.phone || '—'}</span></div>
+            ${p.alternate_phone ? `<div class="info-item"><label>Alt Mobile</label><span>${p.alternate_phone}</span></div>` : ''}
+            <div class="info-item"><label>Pincode</label><span>${prof.pincode || '—'}</span></div>
+            <div class="info-item"><label>District</label><span>${prof.district || 'Karimnagar'}</span></div>
+            <div class="info-item"><label>State</label><span>${prof.state || 'Telangana'}</span></div>
+            <div class="info-item" style="grid-column:1/-1"><label>Flat / House No.</label><span>${prof.flat_no || '—'}</span></div>
+            <div class="info-item" style="grid-column:1/-1"><label>Landmark</label><span>${prof.landmark || '—'}</span></div>
+            <div class="info-item" style="grid-column:1/-1"><label>Village / Area</label><span>${prof.village || '—'}</span></div>
+            <div class="info-item" style="grid-column:1/-1"><label>Full Address</label><span>${prof.full_address || compositeAddr}</span></div>
+        ${isElec ? `
+        <div class="info-item" style="grid-column:1/-1">
+          <label>Expertise Categories</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            <span class="chip" style="background:var(--navy);color:#fff">${prof.primary_skill || 'General'}</span>
+          </div>
+        </div>
+        <div class="info-item" style="grid-column:1/-1">
+          <label>Specific Skills</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+            ${(prof.skills || '').split(',').filter(x => x.trim()).map(s => `<span class="chip blue" style="background:rgba(59,130,246,.1);color:#1d4ed8;border:1px solid rgba(59,130,246,.2)">${s.trim()}</span>`).join('') || '—'}
+          </div>
+        </div>
+        <div class="info-item"><label>Experience</label><span>${prof.experience_years || 0} years</span></div>
+        <div class="info-item"><label>Toolkit</label><span>${prof.toolkit || 'None'}</span></div>
+        ` : ''}
+      </div>
+      <div style="margin-top:24px">
+        <a href="${p.role === 'electrician' ? '/electrician' : '/customer'}#profile" class="btn btn-primary" onclick="sessionStorage.setItem('openSection','profileSection')">Edit Profile</a>
+      </div>`;
+    } catch (e) { document.getElementById('profileDetails').innerHTML = '<p style="color:var(--red)">Failed to load profile.</p>'; }
+  })();
+</script>
+{% endblock %}

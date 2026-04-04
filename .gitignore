@@ -1,0 +1,59 @@
+# ── Secrets ──────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+auth_key.json
+*.pem
+
+# ── Environments ─────────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env/
+
+# ── Python Generated ─────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ── Databases & Logs ─────────────────────────────────────────────────
+*.log
+*.sqlite
+*.db
+instance/
+storage/
+logs/
+
+# ── OS Generated ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE & Metadata ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# ── Node Dependencies ────────────────────────────────────────────────
+node_modules/
+
+# ── Temporary / Debug Files ──────────────────────────────────────────
+*.txt
+*.bak
+*.tmp
+*.temp
+out.txt
+diag_*.py
+debug.html
+temp/

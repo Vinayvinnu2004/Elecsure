@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}ElecSure — Home Electrical Services{% endblock %}</title>
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml" />
+  <!-- Non-blocking font load -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    as="style" onload="this.onload=null;this.rel='stylesheet'" />
+  <noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet" />
+  </noscript>
+  <link rel="stylesheet" href="/static/css/main.css?v=7" />
+  {% block head %}{% endblock %}
+</head>
+
+<body class="{% block body_class %}{% endblock %}">
+
+  <nav class="navbar" id="topNavbar">
+    <div class="nav-inner">
+      <div class="nav-brand-group">
+        <a href="/" class="nav-brand" style="text-decoration:none; color:inherit;"><span class="bolt">⚡</span> ElecSure</a>
+      </div>
+      <div class="nav-links" id="navLinks">
+        <a href="/" class="nav-home-link">Home</a>
+        <a href="/#services">Services</a>
+        <a href="/#how-it-works">How It Works</a>
+        <a href="/#about">About</a>
+      </div>
+      <div class="nav-auth" id="navAuth">
+        <a href="/login" class="btn btn-outline">Login</a>
+        <a href="/register" class="btn btn-primary">Get Started</a>
+      </div>
+      <button class="nav-toggle" id="navToggle" aria-label="Menu">&#9776;</button>
+    </div>
+  </nav>
+
+  <script>
+    (function () {
+      const role = localStorage.getItem('role');
+      const navLinks = document.getElementById('navLinks');
+      const authDiv = document.getElementById('navAuth');
+
+      if (!authDiv) return;
+      if (role) {
+        const dashboardUrl = role === 'admin' ? '/admin' : role === 'electrician' ? '/electrician' : '/customer';
+        const userName = localStorage.getItem('userName') || 'User';
+        authDiv.innerHTML = `
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:14px;font-weight:600;color:var(--navy);white-space:nowrap">Hi, ${userName}</span>
+            <a href="${dashboardUrl}" class="btn btn-primary" style="padding:8px 16px;font-size:13px">Dashboard</a>
+            <button onclick="localStorage.removeItem('token');localStorage.removeItem('role');location.reload();" class="btn btn-outline" style="padding:8px 16px;font-size:13px">Logout</button>
+          </div>`;
+      }
+    })();
+  </script>
+
+  <!-- Services Sidebar -->
+  <div id="servicesSidebarOverlay" class="services-sidebar-overlay hidden">
+    <div class="services-sidebar">
+      <div class="services-sidebar-header">
+        <h3>⚡ All Services</h3>
+        <button onclick="document.getElementById('servicesSidebarOverlay').classList.add('hidden')"
+          class="sidebar-close-btn">&times;</button>
+      </div>
+      <input type="text" id="sidebarSearch" placeholder="Search services..." class="sidebar-search"
+        oninput="filterSidebarServices(this.value)" />
+      <div id="servicesSidebarContent" class="services-sidebar-content"></div>
+    </div>
+  </div>
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <!-- Elecsure Assistant chatbot — loaded via chatbot.js -->
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Review Lock Overlay (Customer) -->
+  <div id="reviewOverlay" class="review-overlay hidden">
+    <div class="review-overlay-card">
+      <div style="font-size:48px;margin-bottom:12px">🎉</div>
+      <h2>Service Completed!</h2>
+      <p>Please share your feedback to unlock your dashboard.</p>
+      <div class="star-rating" id="starRating" style="margin-bottom:16px">
+        <span onclick="setRating(1)">★</span><span onclick="setRating(2)">★</span><span
+          onclick="setRating(3)">★</span><span onclick="setRating(4)">★</span><span onclick="setRating(5)">★</span>
+      </div>
+      <textarea id="reviewComment" placeholder="Share your experience (optional)" rows="3"
+        style="width:100%;margin:12px 0;padding:10px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;font-family:inherit;min-height:80px"></textarea>
+      <div style="display:flex;gap:10px;justify-content:center" id="reviewOverlayActions">
+        <button class="btn btn-primary" onclick="submitReview()">Submit Review</button>
+        <button class="btn btn-outline" id="skipReviewBtn" onclick="dismissReviewOverlay()">Skip for now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Acknowledgment Overlay (Electrician) -->
+  <div id="reviewReceivedOverlay" class="review-overlay hidden">
+    <div class="review-overlay-card">
+      <div style="font-size:48px;margin-bottom:12px">⭐</div>
+      <h2>New Review Received!</h2>
+      <div id="reviewReceivedContent"
+        style="margin:16px 0; text-align: left; background: var(--gray-50); padding: 16px; border-radius: var(--radius-sm);">
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-primary" id="ackReviewBtn" onclick="acknowledgeCurrentReview()">Done (Dismiss)</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <div class="nav-brand" style="margin-bottom:8px"><span class="bolt">⚡</span> ElecSure</div>
+        <p style="color:#9ca3af;font-size:14px">Professional electrical services, Karimnagar.</p>
+      </div>
+      <div>
+        <h4>Quick Links</h4>
+        <a href="/#services" id="quickLinkServices">Services</a>
+        <a href="/register">Register as Customer</a>
+        <a href="/register?role=electrician">Join as Electrician</a>
+      </div>
+      <script>
+        (function() {
+          const role = localStorage.getItem('role');
+          if (role === 'electrician') {
+            const link = document.getElementById('quickLinkServices');
+            if (link) link.style.display = 'none';
+          }
+        })();
+      </script>
+      <div>
+        <h4>Support</h4>
+        <p style="color:#f59e0b">+91-1800-XXX-XXXX</p>
+        <a href="mailto:support@elecsure.com">support@elecsure.com</a>
+      </div>
+    </div>
+    <div class="footer-bottom">&copy; 2025 ElecSure · Karimnagar, Telangana</div>
+  </footer>
+
+  <script src="/static/js/main.js?v=9"></script>
+  <script src="/static/js/chatbot.js?v=9"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof updateNavbar === 'function') updateNavbar();
+      if (typeof syncSessionFromCookie === 'function') syncSessionFromCookie();
+      buildServicesSidebar('servicesSidebarContent', selectServiceFromSidebar);
+    });
+    function openServicesSidebar() {
+      document.getElementById('servicesSidebarOverlay').classList.remove('hidden');
+    }
+    function filterSidebarServices(query) {
+      const q = query.toLowerCase();
+      document.querySelectorAll('.srv-item').forEach(el => { el.style.display = el.textContent.toLowerCase().includes(q) ? 'block' : 'none'; });
+      if (q) document.querySelectorAll('.srv-cat').forEach(c => c.classList.add('open'));
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+
+</html>
+
+</html>

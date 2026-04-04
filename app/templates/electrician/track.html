@@ -1,0 +1,186 @@
+{% extends "shared/base.html" %}
+{% block title %}Track Your Orders — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+{% block content %}
+<div class="dash-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><span class="bolt">⚡</span> ElecSure</div>
+    <div class="sidebar-user">
+      <div class="avatar" id="avatarCircle" onclick="window.location='/profile'" style="cursor:pointer"
+        title="View Profile">E</div>
+      <div><strong id="sidebarName">Loading...</strong><br /><small>Electrician</small></div>
+    </div>
+    <div class="el-score-widget">
+      <div class="el-label">EL Score</div>
+      <div class="el-value" id="elScoreVal" style="transition:all .4s">--</div>
+      <div class="el-bar">
+        <div class="el-fill" id="elFill" style="width:0%;transition:width .6s ease"></div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/electrician" class="nav-item">Dashboard</a>
+      <a href="/electrician/track" class="nav-item active">Track Your Orders</a>
+      <a href="/electrician" class="nav-item">Manage Slots</a>
+      <a href="/electrician" class="nav-item">Service Areas</a>
+      <a href="/electrician" class="nav-item">Analytics</a>
+      <a href="/electrician" class="nav-item">My Profile</a>
+    </nav>
+    <button class="sidebar-logout" onclick="logout()">Logout</button>
+  </aside>
+
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <h1 class="dash-title" id="dashTitle">Track Your Orders</h1>
+      <div class="topbar-right">
+        <label class="avail-toggle" title="Toggle availability" for="availToggle">
+          <input type="checkbox" id="availToggle" onchange="toggleAvailability()" />
+          <span class="avail-slider"></span>
+          <span id="availLabel" style="font-size:13px;font-weight:600">Available</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Orders Section with Filters -->
+    <section id="ordersSection" class="dash-section active">
+      <div class="section-toolbar">
+        <div class="filter-tabs">
+          <button class="ftab active" onclick="filterOrders('all',this)">All</button>
+          <button class="ftab" onclick="filterOrders('ASSIGNED',this)">Assigned</button>
+          <button class="ftab" onclick="filterOrders('ACCEPTED',this)">Accepted</button>
+          <button class="ftab" onclick="filterOrders('STARTED',this)">In Progress</button>
+          <button class="ftab" onclick="filterOrders('COMPLETED',this)">Completed</button>
+        </div>
+      </div>
+      <div id="ordersList" class="cards-grid">
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="orderModal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeModal('orderModal')"></div>
+  <div class="modal-card" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="orderModalTitle">Order Details</h3><button onclick="closeModal('orderModal')">&times;</button>
+    </div>
+    <div id="orderModalBody" class="modal-body"></div>
+    <div class="modal-footer" id="orderModalFooter"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let allOrders = [];
+
+  (async () => {
+    requireAuth(['electrician']);
+    document.getElementById('sidebarName').textContent = localStorage.getItem('userName') || '';
+    document.getElementById('avatarCircle').textContent = (localStorage.getItem('userName') || 'E')[0].toUpperCase();
+    loadProfile().catch(() => { });
+    loadOrders().catch(() => { });
+  })();
+
+  async function loadProfile() {
+    try {
+      const p = await apiGet('/api/v1/users/me');
+      const eProf = p.electrician_profile || {};
+      document.getElementById('sidebarName').textContent = p.name || '';
+      document.getElementById('availToggle').checked = eProf.is_available;
+      document.getElementById('availLabel').textContent = eProf.is_available ? 'Available' : 'Unavailable';
+      document.getElementById('availLabel').style.color = eProf.is_available ? 'var(--green)' : 'var(--red)';
+      document.getElementById('elScoreVal').textContent = (eProf.el_score || 65).toFixed(1);
+      document.getElementById('elFill').style.width = (eProf.el_score || 65) + '%';
+    } catch (e) { }
+  }
+
+  async function loadOrders() {
+    try {
+      const data = await apiGet('/api/v1/bookings/my?per_page=50');
+      allOrders = data.items || [];
+      renderOrders(allOrders);
+    } catch (e) {
+      document.getElementById('ordersList').innerHTML = '<p style="color:var(--red);padding:16px">Failed to load orders.</p>';
+    }
+  }
+
+  function renderOrders(orders) {
+    const el = document.getElementById('ordersList');
+    if (!orders.length) { el.innerHTML = '<div class="empty-state">No orders found matching this filter.</div>'; return; }
+    const statusLabel = {
+      'REQUESTED': 'Requested', 'ASSIGNED': 'New Order', 'ACCEPTED': 'Accepted',
+      'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Reviewed', 'CANCELLED': 'Cancelled'
+    };
+    el.innerHTML = orders.map(o =>
+      '<div class="booking-card status-' + o.status.toLowerCase() + '" onclick="openOrderModal(\'' + o.id + '\')">' +
+      '<div class="booking-card-top"><strong>' + (o.service ? o.service.name : 'Service') + '</strong>' +
+      '<span class="status-chip ' + o.status.toLowerCase() + '">' + (statusLabel[o.status] || o.status) + '</span></div>' +
+      '<div class="booking-card-meta">📅 ' + formatDate(o.preferred_date) + ' &nbsp;|&nbsp; ₹' + o.total_amount + '</div>' +
+      '<div class="booking-card-id">#' + o.id + '</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  function filterOrders(status, btn) {
+    document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (status === 'all') { renderOrders(allOrders); return; }
+    if (status === 'COMPLETED') {
+      renderOrders(allOrders.filter(o => o.status === 'COMPLETED' || o.status === 'REVIEWED'));
+      return;
+    }
+    renderOrders(allOrders.filter(o => o.status === status));
+  }
+
+  async function openOrderModal(id) {
+    try {
+      const b = await apiGet('/api/v1/bookings/' + id);
+      document.getElementById('orderModalTitle').textContent = 'Order #' + b.id;
+      const statusLabel = { 'REQUESTED': 'Requested', 'ASSIGNED': 'New Order', 'ACCEPTED': 'Accepted', 'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Reviewed', 'CANCELLED': 'Cancelled' };
+      let custCard = '';
+      if (b.customer_name) {
+        custCard = '<div style="grid-column:1/-1;background:rgba(30,58,95,.05);border:1.5px solid rgba(30,58,95,.2);border-radius:var(--radius);padding:16px;margin-top:4px">' +
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin-bottom:12px">👤 Customer Details</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:14px">' +
+          '<div><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Name</span><strong>' + b.customer_name + '</strong></div>' +
+          '<div><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Mobile</span><strong style="color:var(--navy);font-size:15px">' + (b.customer_phone || '—') + '</strong></div>' +
+          '<div style="grid-column:1/-1"><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Address</span><span>' + (b.customer_address || b.address) + '</span></div>' +
+          '</div></div>';
+      }
+      document.getElementById('orderModalBody').innerHTML = '<div class="info-grid">' +
+        '<div class="info-item"><label>Status</label><span class="status-chip ' + b.status.toLowerCase() + '">' + (statusLabel[b.status] || b.status) + '</span></div>' +
+        '<div class="info-item"><label>Service</label><span>' + (b.service ? b.service.name : '—') + '</span></div>' +
+        '<div class="info-item"><label>Date</label><span>' + formatDate(b.preferred_date) + '</span></div>' +
+        '<div class="info-item"><label>Amount</label><span>₹' + b.total_amount + '</span></div>' +
+        custCard + '</div>';
+      const f = document.getElementById('orderModalFooter'); f.innerHTML = '';
+      if (b.status === 'ASSIGNED') f.innerHTML += '<button class="btn btn-primary" onclick="doAction(\'accept\',\'' + b.id + '\')">✅ Accept Order</button>';
+      if (b.status === 'ACCEPTED') f.innerHTML += '<button class="btn btn-success" onclick="doAction(\'start\',\'' + b.id + '\')">▶ Start Service</button>';
+      if (b.status === 'STARTED') f.innerHTML += '<button class="btn btn-primary" onclick="doAction(\'complete\',\'' + b.id + '\')">✔ Mark Complete</button>';
+      document.getElementById('orderModal').classList.remove('hidden');
+    } catch (e) { showToast('Failed to load order', 'error'); }
+  }
+
+  async function doAction(action, id) {
+    try {
+      await apiPost('/api/v1/bookings/' + id + '/' + action, {});
+      showToast('Order ' + action + 'ed!', 'success');
+      closeModal('orderModal');
+      await loadOrders();
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function toggleAvailability() {
+    try {
+      const res = await apiPost('/api/v1/users/me/availability', {});
+      await loadProfile();
+      showToast(res.message || 'Availability updated', 'success');
+    } catch (e) { showToast(e.message, 'error'); document.getElementById('availToggle').checked = !document.getElementById('availToggle').checked; }
+  }
+</script>
+{% endblock %}

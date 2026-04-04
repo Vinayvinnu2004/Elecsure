@@ -1,0 +1,1754 @@
+{% extends "shared/base.html" %}
+{% block title %}Electrician Dashboard — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" async defer></script>
+<style>
+  #orderMap {
+    height: 280px;
+    width: 100%;
+    border-radius: 12px;
+    margin: 16px 0;
+    border: 1.5px solid var(--gray-200);
+    position: relative;
+    z-index: 1;
+  }
+
+  #trackingMapContainer {
+    position: relative;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dash-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><span class="bolt">⚡</span> ElecSure</div>
+    <div class="sidebar-user">
+      <div class="avatar" id="avatarCircle" onclick="window.location='/profile'" style="cursor:pointer"
+        title="View Full Profile Details">E</div>
+      <div><strong id="sidebarName">Loading...</strong><br /><small>Electrician</small></div>
+    </div>
+    <div class="el-score-widget">
+      <div class="el-label">EL Score</div>
+      <div class="el-value" id="elScoreVal" style="transition:all .4s">--</div>
+      <div class="el-bar">
+        <div class="el-fill" id="elFill" style="width:0%;transition:width .6s ease"></div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active"
+        onclick="openSection('dashboardHomeSection'); document.getElementById('dashTitle').textContent='Dashboard'">Dashboard</a>
+      <a href="#" class="nav-item"
+        onclick="openSection('ordersSection'); document.getElementById('dashTitle').textContent='Track Your Orders'">Track
+        Your Orders</a>
+      <a href="#" class="nav-item" onclick="openSection('slotsSection')">Manage Slots</a>
+      <a href="#" class="nav-item" onclick="openSection('areasSection')">Service Areas</a>
+      <a href="#" class="nav-item" onclick="openSection('analyticsSection')">Analytics</a>
+      <a href="#" class="nav-item" onclick="openSection('earningsHistorySection')">Earnings History</a>
+      <a href="#" class="nav-item" onclick="openSection('reviewsSection')">My Reviews</a>
+      <a href="#" class="nav-item" onclick="openSection('skillsSection')">Manage Skills</a>
+      <a href="#" class="nav-item" onclick="openSection('profileSection')">My Profile</a>
+      <a href="#" class="nav-item" onclick="openSection('scoreSection')">EL Score Log</a>
+      <a href="#" class="nav-item" onclick="openSection('settingsSection')">Settings</a>
+    </nav>
+    <button class="sidebar-logout" onclick="logout()">Logout</button>
+  </aside>
+
+  <div class="dash-main">
+    <div class="dash-topbar">
+      <button class="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <h1 class="dash-title" id="dashTitle">Track Your Orders</h1>
+      <div class="topbar-right">
+        <label class="avail-toggle" title="Toggle availability" for="availToggle">
+          <input type="checkbox" id="availToggle" onchange="toggleAvailability()" />
+          <span class="avail-slider"></span>
+          <span id="availLabel" style="font-size:13px;font-weight:600">Available</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Dashboard Home (Only Active Orders with Full Details) -->
+    <section id="dashboardHomeSection" class="dash-section active">
+      <!-- Account Verification Banner -->
+      <div id="verificationBanner" class="alert hidden"
+        style="margin-bottom: 24px; background: rgba(245, 11, 31, 0.1); border: 1.5px solid var(--amber); color: var(--amber); border-radius: var(--radius-sm); font-weight: 600;">
+        ⏳ Your account is pending admin verification. You cannot manage slots or service areas, or receive orders until
+        verified. we will notify you when verified.
+      </div>
+
+      <!-- Commission Alert Banner -->
+      <div id="commissionBanner" class="alert hidden"
+        style="margin-bottom: 24px; background: rgba(255, 248, 230, 0.9); border: 1.5px solid #f59e0b; color: #92400e; border-radius: var(--radius-sm); padding: 16px; font-weight: 500;">
+        <div style="font-weight: 800; margin-bottom: 4px; display:flex; align-items:center; gap:8px; font-size:15px">
+          ⚠️ Action Required: Your pending commission is ₹<span id="commAmount">0</span>+
+        </div>
+        <div>You will be restricted from receiving new bookings at ₹3,000.</div>
+        <div style="margin-top:4px">Please pay now to continue working without interruption.</div>
+      </div>
+
+      <div id="activeOrdersList" class="cards-grid">
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+      </div>
+    </section>
+
+    <!-- Orders (loaded on startup) -->
+    <section id="ordersSection" class="dash-section">
+      <div class="section-toolbar">
+        <div class="filter-tabs">
+          <button class="ftab active" onclick="filterOrders('all',this)">All</button>
+          <button class="ftab" onclick="filterOrders('ASSIGNED',this)">Assigned</button>
+          <button class="ftab" onclick="filterOrders('ACCEPTED',this)">Accepted</button>
+          <button class="ftab" onclick="filterOrders('STARTED',this)">In Progress</button>
+          <button class="ftab" onclick="filterOrders('COMPLETED',this)">Completed</button>
+        </div>
+      </div>
+      <div id="ordersList" class="cards-grid">
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+      </div>
+    </section>
+
+    <!-- Slots (lazy) -->
+    <section id="slotsSection" class="dash-section">
+      <div
+        style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px">
+        <div id="weekDisplay" class="week-display">
+          <span class="icon">📅</span>
+          <span class="text" id="weekInfo">Loading week...</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <button class="ftab active" id="tabCurrentWeek" onclick="switchWeekTab('current',this)">Current Week</button>
+          <button class="ftab" id="tabNextWeek" onclick="switchWeekTab('next',this)">Next Week</button>
+          <button class="ftab" id="tabHistory" onclick="switchWeekTab('history',this)">History</button>
+          <button class="btn btn-primary" id="bookSlotBtn" onclick="openSlotModal()">+ Book Slot</button>
+        </div>
+      </div>
+
+      <div id="daySelector" class="day-selector"></div>
+
+      <div id="slotsContainer" class="slots-container">
+        <div id="dayHeader" class="day-sticky-header hidden"></div>
+        <div id="slotsList" class="slots-grid">
+          <div class="loading-card">Click a day to view slots...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Service Areas (lazy) -->
+    <section id="areasSection" class="dash-section">
+      <div class="profile-card">
+        <h3>Service Areas (Pincodes)</h3>
+        <div class="form-row" style="margin-bottom:16px;align-items:flex-end">
+          <div class="form-group" style="flex:2">
+            <label>Select Pincode to Add</label>
+            <select id="newPincodeSelect" class="pincode-select">
+              <option value="">Select a pincode</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="addAreaBtn" onclick="addArea()" style="height:44px">Add Area</button>
+        </div>
+        <div id="areasList" class="areas-list">
+          <div class="loading-card">Loading...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics (lazy) -->
+    <section id="analyticsSection" class="dash-section">
+      <div id="analyticsContent">
+        <div class="loading-card">Click Analytics to load...</div>
+      </div>
+    </section>
+
+    <!-- Earnings History (lazy) -->
+    <section id="earningsHistorySection" class="dash-section">
+      <div id="earningsHistoryContent">
+        <div class="loading-card">Loading earnings history...</div>
+      </div>
+    </section>
+
+    <!-- Reviews (lazy) -->
+    <section id="reviewsSection" class="dash-section">
+      <div class="profile-card">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px" id="reviewStats">
+          <div class="an-card amber">
+            <div class="an-num" id="avgRatingDisplay">—</div>
+            <div class="an-label">Avg Rating</div>
+          </div>
+          <div class="an-card">
+            <div class="an-num" id="totalReviewsDisplay">—</div>
+            <div class="an-label">Total Reviews</div>
+          </div>
+          <div class="an-card green">
+            <div class="an-num" id="posReviewsDisplay">—</div>
+            <div class="an-label">Positive (4-5★)</div>
+          </div>
+        </div>
+        <div id="ratingDistWrap" style="margin-bottom:20px"><canvas id="ratingDistChart" height="90"></canvas></div>
+        <div style="background:var(--gray-50);border-radius:var(--radius);padding:18px;margin-bottom:20px">
+          <h4 style="color:var(--navy);margin-bottom:10px">💡 Tips to Improve Your Rating</h4>
+          <ul style="font-size:13px;color:var(--gray-700);line-height:2;padding-left:18px">
+            <li>Arrive on time and greet the customer professionally</li>
+            <li>Explain the problem and solution clearly before starting</li>
+            <li>Complete the job within the estimated time</li>
+            <li>Leave the work area clean after finishing</li>
+            <li>Accept orders within 10 minutes to boost your EL Score</li>
+          </ul>
+        </div>
+        <div id="reviewsList" style="display:flex;flex-direction:column;gap:12px;margin-top:20px;padding:0 18px">
+          <div class="loading-card">Loading reviews...</div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Skills Management (Moved from Profile) -->
+    <section id="skillsSection" class="dash-section">
+      <div class="profile-card">
+        <h3>Manage Your Skills</h3>
+        <p style="color:var(--gray-500);font-size:13px;margin-bottom:20px">Select your primary category and specific sub-skills to receive relevant orders.</p>
+        
+        <div id="skillsAlertBox" class="alert hidden" style="margin-bottom:20px"></div>
+        
+        <div class="form-group">
+          <label for="mainSkillSelect">Main Skill Category <span style="color:red">*</span></label>
+          <select id="mainSkillSelect" onchange="loadSubSkills(this.value)"
+            style="width:100%;padding:11px 14px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px">
+            <option value="">Select main skill category</option>
+            <option>Electrical Appliance Repair</option>
+            <option>Wiring &amp; Circuit Repairs</option>
+            <option>Lighting Services</option>
+            <option>Installations</option>
+            <option>Safety Checks &amp; Inspections</option>
+            <option>Power Backup Services</option>
+            <option>Electrical Service Packages</option>
+          </select>
+        </div>
+        
+        <div class="form-group" id="subSkillGroup" style="display:none; margin-top:16px">
+          <label>Sub-Category Skills <span style="color:red">*</span></label>
+          <div id="subSkillCheckboxGrid"
+            style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;max-height:280px;overflow-y:auto;margin-top:8px">
+          </div>
+          <input type="hidden" id="skillsHidden" />
+          <input type="hidden" id="primarySkillHidden" />
+        </div>
+        
+        <div style="margin-top:24px">
+          <button class="btn btn-primary" id="saveSkillsBtn" onclick="saveSkills()">Save Skills</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Profile (lazy) -->
+    <section id="profileSection" class="dash-section">
+      <div class="profile-card">
+        <h3>My Profile</h3>
+        <div id="profileAlertBox" class="alert hidden"></div>
+        <form id="profileForm">
+          <div class="form-row">
+            <div class="form-group"><label>Email Address <span style="color:red">*</span></label><input type="email"
+                name="email" id="pEmail" autocomplete="email" placeholder="you@example.com" required /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Full Name <span style="color:red">*</span></label><input type="text"
+                name="name" id="pName" autocomplete="name" placeholder="Your full name" required /></div>
+            <div class="form-group"><label>Mobile Number <span style="color:red">*</span></label><input type="tel"
+                name="phone" id="pPhone" autocomplete="tel" placeholder="Primary mobile number" required /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Experience (years)</label><input type="number" name="experience_years"
+                id="pExp" autocomplete="off" min="0" max="60" placeholder="0" /></div>
+            <div class="form-group">
+              <label>Toolkit</label>
+              <select name="toolkit" id="pToolkit" autocomplete="off"
+                style="width:100%;padding:11px 14px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px">
+                <option value="none">None</option>
+                <option value="basic">Basic</option>
+                <option value="advanced">Advanced (+EL Score)</option>
+                <option value="both">Both (+EL Score)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Pincode</label>
+              <input type="text" name="pincode" id="pPincode" placeholder="Enter Pincode"
+                style="width:100%;padding:11px 14px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px" />
+            </div>
+            <div class="form-group"><label>District</label><input type="text" id="pDistrictDisplay"
+                name="district_display" value="Karimnagar" readonly
+                style="width:100%;padding:11px 14px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px;background:var(--gray-100)" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Flat / House No.</label><input type="text" id="pFlat" placeholder="e.g. 101" /></div>
+            <div class="form-group"><label>Landmark</label><input type="text" id="pLandmark" placeholder="Nearby school/shop" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Village / Area</label><input type="text" id="pVillage" placeholder="Area name" /></div>
+            <div class="form-group"></div>
+          </div>
+          <div class="form-group">
+            <label>Full Address</label>
+            <textarea name="full_address" id="pAddress" autocomplete="street-address" rows="3"
+              placeholder="Complete address..." style="min-height:80px;resize:vertical"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- EL Score Log (lazy) -->
+    <section id="scoreSection" class="dash-section">
+      <div class="profile-card">
+        <h3>EL Score History</h3>
+        <div id="scoreLog">
+          <div class="loading-card">Click EL Score to load...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="settingsSection" class="dash-section">
+      <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+
+        <!-- Sensitive Email Change -->
+        <div class="profile-card">
+          <h3> Update Email Address</h3>
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Security flow: Verify your new email with
+            an
+            OTP</p>
+
+          <div id="emailStep1">
+            <div class="form-group">
+              <label>New Email Address</label>
+              <input type="email" id="newEmailInput" placeholder="new.email@example.com" />
+            </div>
+            <button class="btn btn-primary btn-block" onclick="requestEmailChange()">Send Code to New Email</button>
+          </div>
+
+          <div id="emailStep2" class="hidden" style="margin-top:10px">
+            <div class="form-group">
+              <label>Enter 6-Digit OTP</label>
+              <input type="text" id="emailOtpInput" placeholder="000000" maxlength="6"
+                style="text-align:center; letter-spacing:4px; font-weight:700" />
+            </div>
+            <p style="font-size:12px; color:var(--gray-500); margin-bottom:10px">OTP sent to your new email!</p>
+            <button class="btn btn-primary btn-block" onclick="verifyEmailChange()">Verify & Update Email</button>
+            <button class="btn btn-link btn-block" onclick="resetEmailSteps()" style="margin-top:8px">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Password Management -->
+        <div class="profile-card">
+          <h3> Security & Password</h3>
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Update your login security</p>
+
+          <div class="form-group" id="currentPwdGroup">
+            <label>Current Password</label>
+            <input type="password" id="setOldPwd" placeholder="••••••••" />
+          </div>
+          <div class="form-group">
+            <label>New Password</label>
+            <input type="password" id="setNewPwd" placeholder="Min 8 characters" />
+          </div>
+          <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" id="setConfirmPwd" placeholder="Re-enter new password" />
+          </div>
+          <button class="btn btn-outline btn-block" id="changePwdBtn" onclick="changeSettingsPassword()">Change
+            Password</button>
+
+          <div style="margin-top:16px; border-top:1px solid var(--gray-100); padding-top:16px">
+            <a href="#" onclick="forgotPasswordFromSettings()"
+              style="font-size:13px; color:var(--amber); font-weight:600">Forgot Password? Reset with OTP</a>
+          </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="profile-card" style="border-top:4px solid var(--red)">
+          <h3>Danger Zone</h3>
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">Permanent account actions</p>
+          <p style="color:var(--error-red);font-size:12px;margin-bottom:12px">Once you delete your account, you will
+            lose
+            access to all your history and active orders.</p>
+          <button class="btn btn-danger btn-block" onclick="confirmDeleteAccount()">Delete My Account</button>
+        </div>
+
+      </div>
+
+  </div>
+
+  <!-- Order Modal -->
+  <div id="orderModal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('orderModal')"></div>
+    <div class="modal-card" style="max-width:640px">
+      <div class="modal-header">
+        <h3 id="orderModalTitle">Order Details</h3><button onclick="closeModal('orderModal')">&times;</button>
+      </div>
+      <div id="orderModalBody" class="modal-body"></div>
+      <div class="modal-footer" id="orderModalFooter"></div>
+    </div>
+  </div>
+
+
+
+  <!-- Slot Modal -->
+  <div id="slotModal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal('slotModal')"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Add Time Slot</h3><button onclick="closeModal('slotModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group"><label for="slotDate">Date <span style="color:red">*</span></label><input type="date"
+            id="slotDate" /></div>
+        <div class="form-group">
+          <label for="slotTypeSelect">Time Slot <span style="color:red">*</span></label>
+          <select id="slotTypeSelect"
+            style="width:100%;padding:11px 14px;border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);font-size:14px"
+            onchange="onSlotTypeChange(this)">
+            <option value="">Select a time window</option>
+            <option value="06-09" data-start="06:00" data-end="09:00">6:00 AM – 9:00 AM</option>
+            <option value="09-11" data-start="09:00" data-end="11:00">9:00 AM – 11:00 AM ⭐ Peak</option>
+            <option value="11-13" data-start="11:00" data-end="13:00">11:00 AM – 1:00 PM ⭐ Peak</option>
+            <option value="13-16" data-start="13:00" data-end="16:00">1:00 PM – 4:00 PM</option>
+            <option value="16-19" data-start="16:00" data-end="19:00">4:00 PM – 7:00 PM</option>
+            <option value="19-20" data-start="19:00" data-end="20:00">7:00 PM – 8:00 PM</option>
+            <option value="20-22" data-start="20:00" data-end="22:00">8:00 PM – 10:00 PM ⭐ Peak</option>
+            <option value="22-24" data-start="22:00" data-end="23:59">10:00 PM – 12:00 AM ⭐ Peak</option>
+            <option value="00-03" data-start="00:00" data-end="03:00" style="color:#7c3aed">12:00 AM – 3:00 AM 🌙
+              Midnight
+              (+₹50)</option>
+            <option value="03-06" data-start="03:00" data-end="06:00" style="color:#7c3aed">3:00 AM – 6:00 AM 🌙
+              Midnight
+              (+₹50)</option>
+          </select>
+          <p id="slotMidnightNote" style="font-size:13px;color:#7c3aed;display:none;margin-top:6px">🌙 You earn ₹50
+            extra
+            per booking in this slot!</p>
+          <p id="slotPeakNote" style="font-size:13px;color:#1e40af;display:none;margin-top:6px">⭐ Peak slot — higher
+            demand, more likely to get orders!</p>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="createSlot()">Book Slot</button></div>
+    </div>
+  </div>
+
+  {% endblock %}
+  {% block scripts %}
+  <script>
+    let allOrders = [], myElectricianId = null, selectedDay = null;
+    let elecCharts = {};
+    const _loaded = {};
+
+    (async () => {
+      const ok = await requireAuthAsync(['electrician']);
+      if (!ok) return;
+
+      const newPinSel = document.getElementById('newPincodeSelect');
+      if (newPinSel) {
+        Object.entries(KARIMNAGAR_PINCODES).forEach(([pin, data]) => {
+          const opt = document.createElement('option');
+          opt.value = pin; opt.textContent = pin + ' — ' + data.area;
+          newPinSel.appendChild(opt);
+        });
+      }
+
+      document.getElementById('sidebarName').textContent = localStorage.getItem('userName') || '';
+
+      // Initial avatar display (initial only)
+      const circle = document.getElementById('avatarCircle');
+      if (circle) circle.textContent = (localStorage.getItem('userName') || 'E')[0].toUpperCase();
+
+      loadProfile().catch(() => { });
+      loadOrders().catch(() => { });
+
+      // Start real-time location tracking
+      if (typeof startLocationUpdates === 'function') {
+        startLocationUpdates();
+      }
+
+      const _openSec = sessionStorage.getItem('openSection');
+      if (_openSec) {
+        sessionStorage.removeItem('openSection');
+        const fn = typeof openSection === 'function' ? openSection : showSection;
+        fn(_openSec);
+      } else if (window.location.hash === '#profile') {
+        const fn = typeof openSection === 'function' ? openSection : showSection;
+        fn('profileSection');
+      }
+    })();
+
+    async function openSection(id) {
+      showSection(id);
+      const titles = {
+        'dashboardHomeSection': 'Dashboard',
+        'ordersSection': 'Track Your Orders',
+        'slotsSection': 'Manage Slots',
+        'areasSection': 'Service Areas',
+        'analyticsSection': 'Your Analytics',
+        'earningsHistorySection': 'Earnings History',
+        'reviewsSection': 'Customer Reviews',
+        'skillsSection': 'Manage Skills',
+        'profileSection': 'My Profile',
+        'scoreSection': 'EL Score Log',
+        'settingsSection': 'Settings'
+      };
+      if (titles[id]) document.getElementById('dashTitle').textContent = titles[id];
+
+      // Sidebar highlight
+      document.querySelectorAll('.nav-item').forEach(i => {
+        i.classList.remove('active');
+        if (i.getAttribute('onclick')?.includes(id)) i.classList.add('active');
+      });
+
+      if (id === 'slotsSection' && !_loaded.slots) { await loadSlots(); _loaded.slots = true; }
+      if (id === 'areasSection' && !_loaded.areas) { await loadAreas(); _loaded.areas = true; }
+      if (id === 'analyticsSection' && !_loaded.analytics) { await loadAnalytics(); _loaded.analytics = true; }
+      if (id === 'earningsHistorySection' && !_loaded.earningsHistory) { await loadEarningsHistory(); _loaded.earningsHistory = true; }
+      if (id === 'reviewsSection' && !_loaded.reviews) { await loadReviews(); _loaded.reviews = true; }
+      if (id === 'skillsSection' && !_loaded.skillsMan) { await loadSkillsForm(); _loaded.skillsMan = true; }
+      if (id === 'profileSection' && !_loaded.profile) { await loadProfileForm(); _loaded.profile = true; }
+      if (id === 'scoreSection' && !_loaded.score) { await loadScoreLog(); _loaded.score = true; }
+      if (id === 'settingsSection' && !_loaded.settings) { await openSettingsSection(); _loaded.settings = true; }
+    }
+
+    function openSettingsSection() {
+      initSettings();
+    }
+
+    function initSettings() {
+      // Feature removed
+    }
+
+    async function requestEmailChange() {
+      const newEmail = document.getElementById('newEmailInput').value.trim();
+      if (!newEmail) { showToast('Enter new email', 'error'); return; }
+      try {
+        await apiPost('/api/v1/users/request-email-change', { new_email: newEmail });
+        document.getElementById('emailStep1').classList.add('hidden');
+        document.getElementById('emailStep2').classList.remove('hidden');
+        showToast('Check new email for OTP', 'success');
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function verifyEmailChange() {
+      const newEmail = document.getElementById('newEmailInput').value.trim();
+      const otp = document.getElementById('emailOtpInput').value.trim();
+      if (!otp) { showToast('Enter OTP', 'error'); return; }
+      try {
+        await apiPost('/api/v1/users/verify-email-change', { new_email: newEmail, otp: otp });
+        showToast('Email updated! Logging out...', 'success');
+        setTimeout(logout, 2000);
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function resetEmailSteps() {
+      document.getElementById('emailStep1').classList.remove('hidden');
+      document.getElementById('emailStep2').classList.add('hidden');
+    }
+
+    async function changeSettingsPassword() {
+      const p = window._electricianProfile;
+      const old_password = document.getElementById('setOldPwd').value;
+      const new_password = document.getElementById('setNewPwd').value;
+      const confirm = document.getElementById('setConfirmPwd').value;
+
+      if (p && p.has_password && !old_password) { showToast('Please enter your current password', 'error'); return; }
+      if (!new_password || !confirm) { showToast('Please enter new password and confirm it', 'error'); return; }
+      if (new_password !== confirm) { showToast('New passwords mismatch', 'error'); return; }
+
+      try {
+        await apiPost('/api/v1/auth/change-password', {
+          old_password: p.has_password ? old_password : null,
+          new_password,
+          confirm_password: confirm
+        });
+        showToast(p.has_password ? 'Password updated successfully!' : 'Password set successfully!', 'success');
+        ['setOldPwd', 'setNewPwd', 'setConfirmPwd'].forEach(id => document.getElementById(id).value = '');
+        // Refresh to update state
+        loadProfile();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    function forgotPasswordFromSettings() {
+      const email = window._electricianProfile?.email;
+      if (email) {
+        apiPost('/api/v1/auth/forgot-password', { email }).then(() => {
+          showToast('Reset code sent to your email and phone', 'info');
+          setTimeout(() => window.location = '/verify?email=' + encodeURIComponent(email), 1500);
+        }).catch(err => showToast(err.message, 'error'));
+      }
+    }
+
+    function confirmDeleteAccount() {
+      if (confirm('Are you ABSOLUTELY sure? This will deactivate your account and clear your availability.')) {
+        apiDelete('/api/v1/users/me').then(() => {
+          showToast('Account deactivated. Goodbye.', 'success');
+          setTimeout(logout, 1500);
+        }).catch(err => showToast(err.message, 'error'));
+      }
+    }
+
+    // ── Profile (sidebar EL score only) ──────────────────────────────
+    async function loadProfile() {
+      try {
+        const p = await apiGet('/api/v1/users/me');
+        myElectricianId = p.id;
+        const eProf = p.electrician_profile || {};
+        const earn = p.earnings || {};
+        document.getElementById('availToggle').checked = eProf.is_available;
+        document.getElementById('availLabel').textContent = eProf.is_available ? 'Available' : 'Unavailable';
+        document.getElementById('availLabel').style.color = eProf.is_available ? 'var(--green)' : 'var(--red)';
+        document.getElementById('elScoreVal').textContent = (eProf.el_score || 65).toFixed(1);
+        document.getElementById('elFill').style.width = (eProf.el_score || 65) + '%';
+
+        const circle = document.getElementById('avatarCircle');
+        if (circle) {
+          circle.textContent = (localStorage.getItem('userName') || 'E')[0].toUpperCase();
+        }
+
+        window._electricianProfile = p;
+
+        // Verification logic
+        if (!p.is_verified) {
+          const vBanner = document.getElementById('verificationBanner');
+          if (vBanner) vBanner.classList.remove('hidden');
+
+          const bSlotBtn = document.getElementById('bookSlotBtn');
+          if (bSlotBtn) bSlotBtn.disabled = true;
+
+          const aAreaBtn = document.getElementById('addAreaBtn');
+          if (aAreaBtn) aAreaBtn.disabled = true;
+
+          const sSkillsBtn = document.getElementById('saveSkillsBtn');
+          if (sSkillsBtn) sSkillsBtn.disabled = true;
+
+          document.getElementById('availToggle').disabled = true;
+        }
+
+        // Commission Logic
+        const commBanner = document.getElementById('commissionBanner');
+        if (commBanner) {
+          if (earn.commission_due >= 2000) {
+            commBanner.classList.remove('hidden');
+            document.getElementById('commAmount').textContent = Math.floor(earn.commission_due / 100) * 100;
+          } else {
+            commBanner.classList.add('hidden');
+          }
+        }
+
+        // Update Password UX based on has_password
+        const pwdGroup = document.getElementById('currentPwdGroup');
+        const pwdBtn = document.getElementById('changePwdBtn');
+        if (p.has_password) {
+          if (pwdGroup) pwdGroup.classList.remove('hidden');
+          if (pwdBtn) pwdBtn.textContent = 'Change Password';
+        } else {
+          if (pwdGroup) pwdGroup.classList.add('hidden');
+          if (pwdBtn) pwdBtn.textContent = 'Set Account Password';
+        }
+      } catch (e) { }
+    }
+
+    // ── Profile form (lazy, only when section opened) ─────────────────
+    async function loadProfileForm() {
+      const p = window._electricianProfile || await apiGet('/api/v1/users/me').catch(() => null);
+      if (!p) return;
+      const eProf = p.electrician_profile || {};
+      const cProf = p.customer_profile || {};
+
+      document.getElementById('pEmail').value = p.email || '';
+      document.getElementById('pName').value = p.name || '';
+      document.getElementById('pPhone').value = p.phone || '';
+      document.getElementById('pExp').value = eProf.experience_years || '';
+      document.getElementById('pToolkit').value = eProf.toolkit || 'none';
+      document.getElementById('pPincode').value = cProf.pincode || '';
+      document.getElementById('pFlat').value = cProf.flat_no || '';
+      document.getElementById('pLandmark').value = cProf.landmark || '';
+      document.getElementById('pVillage').value = cProf.village || '';
+
+      document.getElementById('pAddress').value = cProf.full_address || '';
+    }
+
+    async function loadSkillsForm() {
+      const p = window._electricianProfile || await apiGet('/api/v1/users/me').catch(() => null);
+      if (!p) return;
+      const eProf = p.electrician_profile || {};
+
+      if (eProf.primary_skill) {
+        const mainSel = document.getElementById('mainSkillSelect');
+        for (let o of mainSel.options) {
+          if (eProf.primary_skill === o.value || (o.value && eProf.primary_skill.includes(o.value.split(' ')[0]))) {
+            mainSel.value = o.value;
+            loadSubSkills(o.value, p.skills);
+            break;
+          }
+        }
+      }
+    }
+
+    function loadSubSkills(mainCat, existingSkills) {
+      const sg = document.getElementById('subSkillGroup');
+      const grid = document.getElementById('subSkillCheckboxGrid');
+      if (!mainCat) { sg.style.display = 'none'; return; }
+      sg.style.display = 'block';
+      const catData = typeof SERVICES_TAXONOMY !== 'undefined' ? SERVICES_TAXONOMY[mainCat] : null;
+      if (!catData) { sg.style.display = 'none'; return; }
+      const existing = (existingSkills || '').split(',').map(s => s.trim().toLowerCase());
+      grid.innerHTML = '';
+      Object.keys(catData.subcategories).forEach((sub, i) => {
+        const isChecked = existing.includes(sub.toLowerCase()) ||
+          existing.some(e => sub.toLowerCase().includes(e) || e.includes(sub.toLowerCase().slice(0, 8)));
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:5px 6px;border-radius:4px;border:1px solid var(--gray-200);background:#fff;transition:background .15s';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = sub; cb.id = 'subskill_' + i;
+        cb.style.accentColor = 'var(--amber)';
+        if (isChecked) cb.checked = true;
+        cb.addEventListener('change', updateSkillsHidden);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(sub));
+        label.addEventListener('mouseenter', () => label.style.background = 'rgba(245,158,11,.06)');
+        label.addEventListener('mouseleave', () => label.style.background = cb.checked ? 'rgba(245,158,11,.08)' : '#fff');
+        grid.appendChild(label);
+      });
+      document.getElementById('primarySkillHidden').value = mainCat;
+      updateSkillsHidden();
+    }
+
+    function updateSkillsFromSelect() { updateSkillsHidden(); }
+
+    function updateSkillsHidden() {
+      const cbs = document.querySelectorAll('#subSkillCheckboxGrid input[type=checkbox]:checked');
+      document.getElementById('skillsHidden').value = Array.from(cbs).map(c => c.value).join(',');
+      document.getElementById('primarySkillHidden').value = document.getElementById('mainSkillSelect').value;
+    }
+
+    async function toggleAvailability() {
+      try {
+        const res = await apiPost('/api/v1/users/me/availability', {});
+        await loadProfile();
+        showToast(res.message, 'success');
+      } catch (e) {
+        showToast(e.message, 'error');
+        document.getElementById('availToggle').checked = !document.getElementById('availToggle').checked;
+      }
+    }
+
+    // ── Orders ────────────────────────────────────────────────────────
+    async function loadOrders() {
+      try {
+        const data = await apiGet('/api/v1/bookings/my?per_page=50');
+        allOrders = data.items || [];
+        renderOrders(allOrders);
+
+        // Secondary renders - wrapped to prevent failure from crashing the main list
+        const activeStatuses = ['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'];
+        try {
+          const activeItems = allOrders.filter(o => activeStatuses.includes(o.status));
+          renderActiveOrders(activeItems);
+        } catch (e) { console.error('ActiveOrders error', e); }
+
+        // Check for unacknowledged reviews
+        setTimeout(() => checkAccountReviewLock(), 500);
+      } catch (e) {
+        const el = document.getElementById('ordersList');
+        if (el) el.innerHTML = '<p style="color:var(--red);padding:16px">Failed to load orders. Please try refreshing.</p>';
+        console.error('loadOrders total failure', e);
+      }
+    }
+
+    function renderOrders(orders) {
+      const el = document.getElementById('ordersList');
+      if (!orders.length) { el.innerHTML = '<div class="empty-state">No orders yet.</div>'; return; }
+      const statusLabel = {
+        'REQUESTED': 'Requested', 'ASSIGNED': 'New Order', 'ACCEPTED': 'Accepted', 'ARRIVED': 'Arrived',
+        'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Reviewed', 'CANCELLED': 'Cancelled'
+      };
+      el.innerHTML = orders.map(o =>
+        '<div class="booking-card status-' + o.status.toLowerCase() + '" onclick="openOrderModal(\'' + o.id + '\')">' +
+        '<div class="booking-card-top"><strong>' + ((o.service && o.service.name) || 'Service') + '</strong>' +
+        '<span class="status-chip ' + o.status.toLowerCase() + '">' + (statusLabel[o.status] || o.status) + '</span></div>' +
+        '<div class="booking-card-meta">📅 ' + formatDate(o.preferred_date) + ' &nbsp;|&nbsp; ₹' + o.total_amount + '</div>' +
+        '<div class="booking-card-id">#' + o.id + '</div>' +
+        '</div>'
+      ).join('');
+    }
+
+    function renderActiveOrders(orders) {
+      const el = document.getElementById('activeOrdersList');
+      if (!el) return;
+      if (!orders.length) {
+        el.innerHTML = `
+        <div class="empty-state" style="text-align:center;padding:60px 20px;background:#fff;border-radius:var(--radius);border:1px solid var(--gray-200);width:100%;max-width:860px;margin:0 auto">
+          <div style="font-size:48px;margin-bottom:16px">✨</div>
+          <h2 style="color:var(--navy);margin-bottom:8px">No active orders</h2>
+          <p style="color:var(--gray-500);margin-bottom:24px">Book more slots or take a break.</p>
+          <button class="btn btn-primary" onclick="openSection('slotsSection'); document.getElementById('dashTitle').textContent='Manage Slots'">Manage Slots</button>
+        </div>
+      `;
+        return;
+      }
+      const statusLabel = { 'ASSIGNED': 'Assigned', 'ACCEPTED': 'Accepted', 'ARRIVED': 'Arrived', 'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Reviewed', 'CANCELLED': 'Cancelled' };
+
+      el.innerHTML = orders.map(o => {
+        // Standardized 6-step Timeline
+        const tlSteps = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED', 'COMPLETED'];
+        const tlLabels = {
+          'REQUESTED': 'booked',
+          'ASSIGNED': 'assigned',
+          'ACCEPTED': 'accepted',
+          'ARRIVED': 'arrived',
+          'STARTED': 'in progress',
+          'COMPLETED': 'completed'
+        };
+
+        let tlHtml = '';
+        if (o.status !== 'CANCELLED') {
+          tlHtml = '<div style="margin:16px 0;padding:12px;background:rgba(30,58,95,.03);border-radius:var(--radius-sm)">' +
+            '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray-400);margin-bottom:10px">Execution Timeline</div>' +
+            '<div class="booking-timeline" style="transform:scale(0.95);transform-origin:left center">' +
+            tlSteps.map((key, i) => {
+              let cls = '';
+              if (o.status === 'REQUESTED') { if (i === 0) cls = 'active'; }
+              else if (o.status === 'ASSIGNED') { if (i < 1) cls = 'done'; else if (i === 1) cls = 'active'; }
+              else if (o.status === 'ACCEPTED') { if (i < 2) cls = 'done'; else if (i === 2) cls = 'active'; }
+              else if (o.status === 'ARRIVED') { if (i < 3) cls = 'done'; else if (i === 3) cls = 'active'; }
+              else if (o.status === 'STARTED') { if (i < 4) cls = 'done'; else if (i === 4) cls = 'active'; }
+              else if (o.status === 'COMPLETED' || o.status === 'REVIEWED') { cls = 'done'; }
+
+              return '<div class="tl-step ' + cls + '">' +
+                '<div class="tl-dot">' + (cls === 'done' ? '✓' : (i + 1)) + '</div>' +
+                '<div class="tl-label">' + tlLabels[key] + '</div></div>';
+            }).join('') +
+            '</div></div>';
+        }
+
+        let custCard = '';
+        if (o.customer_name) {
+          custCard =
+            '<div style="background:rgba(30,58,95,.05);border:1.5px solid rgba(30,58,95,.1);border-radius:var(--radius-sm);padding:12px;margin-top:12px">' +
+            '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--navy);margin-bottom:8px">👤 Customer Details</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">' +
+            '<div><span style="color:var(--gray-500);font-size:10px;text-transform:uppercase;display:block">Name</span><strong>' + o.customer_name + '</strong></div>' +
+            '<div><span style="color:var(--gray-500);font-size:10px;text-transform:uppercase;display:block">Mobile</span><strong style="color:var(--navy)">' + (o.customer_phone || '—') + '</strong></div>' +
+            '<div><span style="color:var(--gray-500);font-size:10px;text-transform:uppercase;display:block">Pincode</span><span>' + (o.pincode || '—') + (KARIMNAGAR_PINCODES[o.pincode] ? ' (' + KARIMNAGAR_PINCODES[o.pincode].area + ')' : '') + '</span></div>' +
+            '<div style="grid-column:1/-1"><span style="color:var(--gray-500);font-size:10px;text-transform:uppercase;display:block">Address</span><span>' + (o.customer_address || o.address) + '</span></div>' +
+            '</div>' +
+            '</div>';
+        }
+
+        let mapHtml = '';
+        if (['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'].includes(o.status)) {
+          const targetLat = o.latitude || 18.4386;
+          const targetLng = o.longitude || 79.1288;
+          const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLng}`;
+          mapHtml = `<div style="margin-top:20px; border-top:1px solid var(--gray-100); padding-top:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-500);">📍 Service Location</div>
+                <span id="eta_${o.id}" class="hidden" style="background:var(--navy); color:#fff; padding:2px 10px; border-radius:12px; font-size:10px; font-weight:700; box-shadow:0 2px 4px rgba(0,0,0,.1)">⏱️ --</span>
+              </div>
+              <a href="${mapUrl}" target="_blank" class="btn btn-outline btn-sm" style="padding:4px 10px; font-size:11px; color:var(--navy); border-color:var(--gray-200); text-decoration:none;">🗺️ Navigate</a>
+            </div>
+            <div id="activeMap_${o.id}" style="height:220px; width:100%; border-radius:var(--radius-sm); border:1px solid var(--gray-200); z-index:1;"></div>
+          </div>`;
+        }
+
+        let actions = '';
+        if (o.status === 'ASSIGNED') actions = '<button class="btn btn-primary btn-sm" onclick="doAction(\'accept\',\'' + o.id + '\')">✅ Accept Order</button>';
+        if (o.status === 'ACCEPTED') actions = `
+          <button class="btn btn-warning btn-sm" onclick="doAction('arrived','${o.id}')">📍 I have Arrived</button>
+          <button class="btn btn-ghost btn-sm" onclick="doAction('start','${o.id}')">▶ Skip to Start</button>
+        `;
+        if (o.status === 'ARRIVED') actions = '<button class="btn btn-success btn-sm" onclick="doAction(\'start\',\'' + o.id + '\')">▶ Start Service</button>';
+        if (o.status === 'STARTED') actions = '<button class="btn btn-primary btn-sm" onclick="doAction(\'complete\',\'' + o.id + '\')">✔ Mark Complete</button>';
+
+        return `
+        <div class="booking-card expanded status-${o.status.toLowerCase()}" style="cursor:default">
+          <div class="booking-card-top">
+            <strong>${(o.service && o.service.name) || 'Service'}</strong>
+            <span class="status-chip ${o.status.toLowerCase()}">${statusLabel[o.status] || o.status}</span>
+          </div>
+          
+          ${tlHtml}
+
+          <div class="info-grid" style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:16px; font-size:13px;">
+            <div class="info-item"><label style="font-size:10px; color:var(--gray-500); text-transform:uppercase; display:block;">Date</label><span>${formatDate(o.preferred_date)}</span></div>
+            <div class="info-item"><label style="font-size:10px; color:var(--gray-500); text-transform:uppercase; display:block;">Slot</label><span>${o.time_slot_start && o.time_slot_end ? (formatTime(o.time_slot_start) + ' – ' + formatTime(o.time_slot_end)) : (o.time_slot_start ? formatTime(o.time_slot_start) : 'Not assigned')}</span></div>
+            <div class="info-item"><label style="font-size:10px; color:var(--gray-500); text-transform:uppercase; display:block;">Earnings</label><strong>₹${o.total_amount} <span style="font-size:9px; font-weight:700; color:var(--gray-500); border:1px solid var(--gray-200); padding:1px 4px; border-radius:3px">${o.payment_type.toUpperCase()}</span></strong></div>
+            <div class="info-item" style="grid-column:1/-1"><label style="font-size:10px; color:var(--gray-500); text-transform:uppercase; display:block;">Problem</label><span>${o.problem_description}</span></div>
+          </div>
+          ${custCard}
+          ${mapHtml}
+          <div style="margin-top:16px; display:flex; gap:8px;">
+            ${actions}
+          </div>
+          <div class="booking-card-id" style="margin-top:12px">#${o.id}</div>
+        </div>
+      `;
+      }).join('');
+
+      setTimeout(() => {
+        orders.forEach(o => {
+          if (['ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED'].includes(o.status)) {
+            initActiveOrderMap(o);
+          }
+        });
+      }, 150);
+    }
+
+    function filterOrders(status, btn) {
+      document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (status === 'all') { renderOrders(allOrders); return; }
+      if (status === 'COMPLETED') {
+        renderOrders(allOrders.filter(o => o.status === 'COMPLETED' || o.status === 'REVIEWED'));
+        return;
+      }
+      renderOrders(allOrders.filter(o => o.status === status));
+    }
+
+    async function openOrderModal(id) {
+      try {
+        const b = await apiGet('/api/v1/bookings/' + id);
+        document.getElementById('orderModalTitle').textContent = 'Order #' + b.id;
+        const statusLabel = {
+          'REQUESTED': 'Requested', 'ASSIGNED': 'New Order', 'ACCEPTED': 'Accepted', 'ARRIVED': 'Arrived',
+          'STARTED': 'In Progress', 'COMPLETED': 'Completed', 'REVIEWED': 'Reviewed', 'CANCELLED': 'Cancelled'
+        };
+
+        // Customer contact card
+        let custCard = '';
+        if (b.customer_name) {
+          custCard =
+            '<div style="grid-column:1/-1;background:rgba(30,58,95,.05);border:1.5px solid rgba(30,58,95,.2);border-radius:var(--radius);padding:16px;margin-top:4px">' +
+            '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--navy);margin-bottom:12px">👤 Customer Details</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:14px">' +
+            '<div><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Name</span><strong>' + b.customer_name + '</strong></div>' +
+            '<div><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Mobile</span><strong style="color:var(--navy);font-size:15px">' + (b.customer_phone || '—') + '</strong></div>' +
+            (b.customer_alt_phone ? '<div><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Alt Mobile</span><strong>' + b.customer_alt_phone + '</strong></div>' : '<div></div>') +
+            '<div style="grid-column:1/-1"><span style="color:var(--gray-500);font-size:11px;font-weight:700;text-transform:uppercase;display:block;margin-bottom:2px">Address</span><span>' + (b.customer_address || b.address) + '</span></div>' +
+            '</div>' +
+            '</div>';
+        } else if (b.customer_phone_masked) {
+          custCard = '<div class="info-item"><label>Customer</label><span>' + b.customer_phone_masked + '</span></div>';
+        }
+
+        document.getElementById('orderModalBody').innerHTML =
+          '<div class="info-grid">' +
+          '<div class="info-item"><label>Status</label><span class="status-chip ' + b.status.toLowerCase() + '">' + (statusLabel[b.status] || b.status) + '</span></div>' +
+          '<div class="info-item"><label>Service</label><span>' + (b.service && b.service.name ? b.service.name : '—') + '</span></div>' +
+          '<div class="info-item"><label>Date</label><span>' + formatDate(b.preferred_date) + '</span></div>' +
+          '<div class="info-item"><label>Slot Time</label><span>' + (b.time_slot_start && b.time_slot_end ? (formatTime(b.time_slot_start) + ' – ' + formatTime(b.time_slot_end)) : 'Any Available Time') + '</span></div>' +
+          '<div class="info-item"><label>Amount</label><span style="font-weight:700;color:var(--navy)">₹' + b.total_amount + '</span></div>' +
+          '<div class="info-item"><label>Payment</label><span>' + (b.payment_type === 'cod' ? '💵 Cash on Delivery' : '💳 Online') + '</span></div>' +
+          '<div class="info-item"><label>Pincode</label><span>' + b.pincode + (KARIMNAGAR_PINCODES[b.pincode] ? ' (' + KARIMNAGAR_PINCODES[b.pincode].area + ')' : '') + '</span></div>' +
+          '<div class="info-item" style="grid-column:1/-1"><label>Problem Description</label><span>' + b.problem_description + '</span></div>' +
+          custCard +
+          '</div>';
+
+        const f = document.getElementById('orderModalFooter');
+        f.innerHTML = '';
+        if (b.status === 'ASSIGNED') f.innerHTML += '<button class="btn btn-primary" onclick="doAction(\'accept\',\'' + b.id + '\')">✅ Accept Order</button>';
+        if (b.status === 'ACCEPTED') f.innerHTML += '<button class="btn btn-warning" onclick="doAction(\'arrived\',\'' + b.id + '\')">📍 I have Arrived</button>';
+        if (b.status === 'ARRIVED') f.innerHTML += '<button class="btn btn-success" onclick="doAction(\'start\',\'' + b.id + '\')">▶ Start Service</button>';
+        if (b.status === 'STARTED') f.innerHTML += '<button class="btn btn-primary" onclick="doAction(\'complete\',\'' + b.id + '\')">✔ Mark Complete</button>';
+        document.getElementById('orderModal').classList.remove('hidden');
+      } catch (e) { showToast('Failed to load order details', 'error'); }
+    }
+
+    let activeMaps = {}, routeLayers = {}, meMarkers = {}, orderTargets = {};
+    function initActiveOrderMap(booking) {
+      if (typeof L === 'undefined') {
+        setTimeout(() => initActiveOrderMap(booking), 250);
+        return;
+      }
+      if (activeMaps[booking.id]) { activeMaps[booking.id].remove(); }
+
+      const targetLat = booking.latitude || 18.4386;
+      const targetLng = booking.longitude || 79.1288;
+      const mapId = 'activeMap_' + booking.id;
+
+      const mapEl = document.getElementById(mapId);
+      if (!mapEl) return;
+
+      const m = L.map(mapId).setView([targetLat, targetLng], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(m);
+
+      const targetIcon = L.divIcon({
+        html: '<div style="background:white;width:40px;height:40px;border-radius:50%;border:2px solid #1e3a5f;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)"><img src="/static/img/customer_marker.png" style="width:100%;height:100%;object-fit:contain" alt="Customer Logo" /></div>',
+        className: '', iconSize: [40, 40], iconAnchor: [20, 20]
+      });
+      L.marker([targetLat, targetLng], { icon: targetIcon }).addTo(m).bindPopup('Customer Location');
+
+      const meIcon = L.divIcon({
+        html: '<div style="background:white;color:#5e35b1;width:38px;height:38px;border-radius:50%;border:3px solid #5e35b1;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 6px 16px rgba(0,0,0,.3)">⚡</div>',
+        className: '', iconSize: [38, 38], iconAnchor: [19, 19]
+      });
+
+      orderTargets[booking.id] = [targetLat, targetLng];
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const myPos = [pos.coords.latitude, pos.coords.longitude];
+          meMarkers[booking.id] = L.marker(myPos, { icon: meIcon }).addTo(m).bindPopup('Your Location');
+          const bounds = L.latLngBounds([targetLat, targetLng], myPos);
+          m.fitBounds(bounds, { padding: [40, 40] });
+
+          // Draw Route
+          drawOrderRoute(booking.id, pos.coords.latitude, pos.coords.longitude, targetLat, targetLng, m);
+        });
+      }
+
+      activeMaps[booking.id] = m;
+    }
+
+    async function drawOrderRoute(bookingId, elat, elng, clat, clng, map) {
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${elng},${elat};${clng},${clat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          const coords = route.geometry.coordinates;
+          const latlngs = coords.map(c => [c[1], c[0]]);
+
+          if (routeLayers[bookingId]) map.removeLayer(routeLayers[bookingId]);
+
+          routeLayers[bookingId] = L.polyline(latlngs, {
+            color: '#3B82F6',
+            weight: 5,
+            opacity: 0.75,
+            dashArray: '8, 12'
+          }).addTo(map);
+
+          const durationMins = Math.ceil(route.duration / 60);
+          const distanceKm = (route.distance / 1000).toFixed(1);
+
+          const etaEl = document.getElementById('eta_' + bookingId);
+          if (etaEl) {
+            etaEl.innerHTML = `⏱️ ${durationMins}m · ${distanceKm}km`;
+            etaEl.classList.remove('hidden');
+          }
+
+          // Keep markers visible
+          const athletePos = [elat, elng];
+          const custPos = [clat, clng];
+          map.fitBounds(L.latLngBounds(athletePos, custPos), { padding: [40, 40] });
+        }
+      } catch (e) {
+        console.error("OSRM Route Error", e);
+      }
+    }
+
+    async function doAction(action, id) {
+      try {
+        await apiPost('/api/v1/bookings/' + id + '/' + action, {});
+        showToast('Order ' + action + 'ed successfully!', 'success');
+        closeModal('orderModal');
+        await loadOrders();
+        if (action === 'complete' || action === 'accept') await loadProfile();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // ── Slots ─────────────────────────────────────────────────────────
+    let allSlots = [], selectedDayDate = null;
+
+    async function loadSlots(type = 'current') {
+      try {
+        const isHistory = type === 'history';
+        const [slots, week] = await Promise.all([
+          apiGet(isHistory ? '/api/v1/slots/my?history=true' : '/api/v1/slots/my'),
+          apiGet('/api/v1/slots/available-week')
+        ]);
+        allSlots = slots;
+        if (isHistory) {
+          document.getElementById('weekInfo').textContent = 'Your Slot History';
+          document.getElementById('daySelector').innerHTML = '';
+          renderHistorySlots();
+        } else {
+          document.getElementById('weekInfo').textContent = formatDate(week.week_start) + ' – ' + formatDate(week.week_end);
+          buildDaySelector(week.week_start);
+        }
+      } catch (e) {
+        document.getElementById('slotsList').innerHTML =
+          '<div class="empty-state" style="padding:48px;text-align:center;color:var(--red)">' +
+          '<div style="font-size:40px;margin-bottom:12px">⚠️</div>' +
+          'Failed to load history. Please refresh or try again.</div>';
+      }
+    }
+
+    function renderHistorySlots() {
+      const el = document.getElementById('slotsList');
+      if (!allSlots || !allSlots.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:48px;text-align:center;color:var(--gray-500)">' +
+          '<div style="font-size:40px;margin-bottom:12px">📅</div>' +
+          'No historical slots (Completed/Failed/Over) found.</div>';
+        return;
+      }
+      el.innerHTML = allSlots.map(s => {
+        const badgeLabel = s.status === 'OVER' ? 'SLOT IS OVER' : s.status;
+        return '<div class="slot-list-item status-' + s.status.toLowerCase() + '">' +
+          '<div class="sli-left">' +
+          '<div class="sli-time">' + formatDate(s.slot_date) + ' | ' + formatTime(s.start_time) + ' – ' + formatTime(s.end_time) + '</div>' +
+          '<div class="sli-meta">Historical Slot Performance</div>' +
+          '</div>' +
+          '<div class="sli-right">' +
+          '<span class="status-chip ' + s.status.toLowerCase() + '">' + badgeLabel + '</span>' +
+          '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function buildDaySelector(weekStartIso) {
+      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const shortDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const start = new Date(weekStartIso);
+      const ds = document.getElementById('daySelector');
+      ds.innerHTML = '';
+      const now = new Date();
+      const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start); d.setDate(start.getDate() + i);
+        const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const isToday = dateStr === todayStr;
+        const isActive = selectedDayDate ? (dateStr === selectedDayDate) : isToday;
+
+        const btn = document.createElement('button');
+        btn.className = 'day-btn' + (isActive ? ' active' : '') + (isToday ? ' today' : '');
+        btn.dataset.date = dateStr;
+        btn.dataset.fullDay = dayNames[i] + ', ' + d.toLocaleDateString('en-US', { month: 'long', day: '2-digit', year: 'numeric' });
+        btn.innerHTML = '<span class="day-name">' + shortDays[i] + '</span><span class="day-num">' + d.getDate() + '</span>';
+        btn.onclick = function () {
+          document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedDayDate = this.dataset.date;
+          renderSlotsForDay(this.dataset.date, this.dataset.fullDay);
+        };
+        if (isActive && !selectedDayDate) {
+          selectedDayDate = dateStr;
+        }
+        ds.appendChild(btn);
+      }
+
+      const activeBtn = Array.from(ds.querySelectorAll('.day-btn')).find(b => b.classList.contains('active')) || ds.querySelector('.day-btn');
+      if (activeBtn) {
+        activeBtn.click();
+      }
+    }
+
+    function renderSlotsForDay(dateStr, fullDayLabel) {
+      const daySlots = allSlots.filter(s => {
+        return (s.slot_date || '').substring(0, 10) === dateStr;
+      });
+
+      const header = document.getElementById('dayHeader');
+      if (header) {
+        header.textContent = fullDayLabel;
+        header.classList.remove('hidden');
+      }
+
+      const isPastDay = new Date(dateStr + 'T23:59:59').getTime() < new Date().getTime();
+      const bookBtn = document.getElementById('bookSlotBtn');
+      if (bookBtn) {
+        bookBtn.style.display = isPastDay ? 'none' : 'block';
+      }
+
+      const el = document.getElementById('slotsList');
+      if (!daySlots.length) {
+        const emptyMsg = isPastDay ? 'No slots were booked on this day.' : 'No slots for this day. Click "+ Book Slot" to add.';
+        el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:48px;text-align:center;color:var(--gray-500)">' +
+          '<div style="font-size:40px;margin-bottom:12px">📅</div>' + emptyMsg + '</div>';
+        return;
+      }
+      const now = new Date();
+      el.innerHTML = daySlots.map(s => {
+        const start = new Date((s.start_time || '').replace(' ', 'T'));
+        const end = new Date((s.end_time || '').replace(' ', 'T'));
+        const isFutureOrCurrent = end.getTime() >= now.getTime();
+        const showCancel = isFutureOrCurrent && (s.status === 'AVAILABLE' || s.status === 'BOOKED');
+
+        const isMidnight = start.getHours() === 0 || start.getHours() === 3;
+
+        let badge = s.status;
+        let instruction = 'Slot is currently ' + s.status.toLowerCase();
+
+        if (s.status === 'AVAILABLE') {
+          badge = 'Available for Booking';
+          instruction = 'Click below to manage this slot';
+        } else if (s.status === 'BOOKED') {
+          badge = 'BOOKED';
+          instruction = 'Ready for Orders';
+        } else if (s.status === 'OVER') {
+          badge = 'SLOT IS OVER';
+          instruction = 'Slot was not booked before start time';
+        } else if (s.status === 'FAILED') {
+          badge = s.violated_mid_slot ? '⚠️ VIOLATION' : 'FAILED';
+          instruction = s.violated_mid_slot ? 'Penalty: Availability toggled mid-slot' : 'Slot failed to complete';
+        }
+
+        const colorClass = isMidnight ? 'midnight' : '';
+
+        return `
+          <div class="slot-card ${colorClass} ${s.status.toLowerCase()}">
+            <div class="slot-card-status">
+               <span class="status-chip ${s.status.toLowerCase()}">${badge === 'BOOKED' ? 'BOOKED' : (s.status === 'OVER' ? 'OVER' : s.status)}</span>
+            </div>
+            <div class="slot-card-time">${formatTime(s.start_time)} – ${formatTime(s.end_time)}</div>
+            <div class="slot-card-badge">${badge}</div>
+            <div class="slot-card-instruction">${instruction}</div>
+            ${isMidnight ? '<div class="slot-card-warning">⚠️ Midnight Slot - Extra 50/- per order</div>' : ''}
+            ${showCancel ? `<button class="slot-card-action cancel" onclick="deleteSlot('${s.id}')">Cancel Slot</button>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function switchWeekTab(tab, btn) {
+      document.querySelectorAll('#slotsSection .ftab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const bookBtn = document.getElementById('bookSlotBtn');
+      if (tab === 'history') {
+        if (bookBtn) bookBtn.style.display = 'none';
+        document.getElementById('slotsList').innerHTML = '<div class="loading-card">Loading history...</div>';
+        loadSlots('history');
+        return;
+      }
+
+      if (tab === 'next') {
+        // Check if it's past Sunday 11:59 PM
+        const now = new Date();
+        const day = now.getDay(); // 0=Sun
+        const isAfterSunday = day === 0 && now.getHours() === 23 && now.getMinutes() >= 59;
+        if (!isAfterSunday) {
+          if (bookBtn) bookBtn.style.display = 'none';
+          document.getElementById('slotsList').innerHTML =
+            '<div class="empty-state" style="padding:32px;text-align:center">' +
+            '<div style="font-size:32px;margin-bottom:12px">📅</div>' +
+            '<strong style="color:var(--navy)">Next week slots not available yet</strong><br/>' +
+            '<span style="color:var(--gray-500);font-size:13px;margin-top:8px;display:block">' +
+            'Next week slots open after Sunday 11:59 PM</span></div>';
+          document.getElementById('daySelector').innerHTML = '';
+          document.getElementById('weekInfo').textContent = 'Available after Sunday 11:59 PM';
+          return;
+        }
+      }
+
+      _loaded.slots = false;
+      document.getElementById('slotsList').innerHTML = '<div class="loading-card">Loading slots...</div>';
+      loadSlots('current');
+    }
+
+    function onSlotTypeChange(sel) {
+      const v = sel.value;
+      document.getElementById('slotMidnightNote').style.display = (v === '00-03' || v === '03-06') ? 'block' : 'none';
+      document.getElementById('slotPeakNote').style.display = (v === '09-11' || v === '11-13' || v === '20-22' || v === '22-24') ? 'block' : 'none';
+    }
+
+    function openSlotModal() {
+      // Robust IST Today calculation
+      const now = new Date();
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + istOffset);
+      const today = istDate.toISOString().split('T')[0];
+
+      document.getElementById('slotDate').value = selectedDayDate || today;
+      document.getElementById('slotDate').min = today;
+      document.getElementById('slotModal').classList.remove('hidden');
+    }
+
+    async function createSlot() {
+      const date = document.getElementById('slotDate').value;
+      const sel = document.getElementById('slotTypeSelect');
+      const opt = sel.options[sel.selectedIndex];
+      if (!date || !sel.value) { showToast('Select a date and time window', 'error'); return; }
+      try {
+        await apiPost('/api/v1/slots/', {
+          slot_date: date + 'T00:00:00',
+          start_time: date + 'T' + opt.dataset.start + ':00',
+          end_time: date + 'T' + opt.dataset.end + ':00',
+        });
+        showToast('Slot added!', 'success');
+        closeModal('slotModal');
+        _loaded.slots = false;
+        await loadSlots();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function deleteSlot(id) {
+      if (!confirm('Cancel this slot?')) return;
+      try {
+        await apiDelete('/api/v1/slots/' + id);
+        showToast('Slot cancelled', 'success');
+        _loaded.slots = false;
+        await loadSlots();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // ── Areas ─────────────────────────────────────────────────────────
+    async function loadAreas() {
+      try {
+        const areas = await apiGet('/api/v1/users/me/service-areas');
+        const el = document.getElementById('areasList');
+        el.innerHTML = areas.map(a =>
+          '<div class="area-chip">📍 ' + a.pincode + ' (' + (a.district || 'Karimnagar') + ')' +
+          '<button onclick="removeArea(\'' + a.id + '\')">&times;</button></div>'
+        ).join('') || '<p style="color:var(--gray-500)">No areas added yet.</p>';
+      } catch (e) { }
+    }
+
+    async function addArea() {
+      const pin = document.getElementById('newPincodeSelect').value;
+      if (!pin) { showToast('Select a pincode', 'error'); return; }
+      try {
+        await apiPost('/api/v1/users/me/service-areas', { pincode: pin, district: 'Karimnagar', state: 'Telangana' });
+        showToast('Area added!', 'success');
+        document.getElementById('newPincodeSelect').value = '';
+        _loaded.areas = false;
+        await loadAreas();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    async function removeArea(id) {
+      try {
+        await apiDelete('/api/v1/users/me/service-areas/' + id);
+        showToast('Area removed', 'success');
+        _loaded.areas = false;
+        await loadAreas();
+      } catch (e) { showToast(e.message, 'error'); }
+    }
+
+    // ── Analytics (Chart.js loaded on demand) ─────────────────────────
+    async function loadAnalytics() {
+      const el = document.getElementById('analyticsContent');
+      el.innerHTML = '<div class="loading-card">Loading analytics...</div>';
+      try {
+        // Load Chart.js lazily only when needed
+        if (typeof Chart === 'undefined') {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+          });
+        }
+        const [data, logs] = await Promise.all([
+          apiGet('/api/v1/analytics/electrician'),
+          apiGet('/api/v1/admin/electricians/' + myElectricianId + '/el-score-logs').catch(() => [])
+        ]);
+        const op = data.order_performance, earn = data.earnings, sa = data.service_analytics,
+          rf = data.rating_feedback, we = data.work_efficiency;
+
+        const elData = [...logs].reverse();
+        const elLabels = elData.map(l => formatDateTime(l.created_at).split(',')[0]);
+        const elScores = elData.map(l => l.score_after);
+
+        const topSvcs = sa.service_breakdown || {};
+        const svcsHtml = Object.keys(topSvcs).map(k => 
+             '<div style="display:flex; justify-content:space-between; align-items:center; background:var(--gray-50); padding:12px 16px; border-radius:var(--radius-sm); margin-bottom:8px;">' +
+             '<span style="color:var(--navy); font-weight:600; font-size:14px;">' + k + '</span>' +
+             '<span style="color:var(--gray-400); font-weight:500; font-size:13px;">' + topSvcs[k] + ' times</span>' +
+             '</div>'
+        ).join('') || '<p style="color:var(--gray-500);font-size:14px">No services completed yet.</p>';
+
+        const topSvcsBlock = '<div class="profile-card" style="padding:22px; margin-top:20px; padding-bottom:14px; grid-column: 1 / -1">' +
+             '<h4 style="margin-bottom:18px;color:var(--navy);font-size:16px;font-weight:600">Top Services Breakdown</h4>' +
+             svcsHtml +
+             '</div>';
+
+        el.innerHTML =
+          (earn.commission_due > 2000 ?
+            '<div class="alert ' + (earn.commission_due > 3000 ? 'error' : 'warning') + '" style="margin-bottom:20px; font-weight: 500; border-radius:var(--radius); padding:16px;">' +
+            (earn.commission_due > 3000 ? '⛔ <strong>Account Restricted:</strong> Commission balance exceeds ₹3,000. Access blocked until cleared.' : '⚠️ <strong>Warning:</strong> Commission balance exceeds ₹2,000. Pay now to avoid deactivation at ₹3,000.') +
+            '</div>' : '') +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px">' +
+          '<div class="an-card green"><div class="an-num">' + op.completed + '</div><div class="an-label">Completed</div></div>' +
+          '<div class="an-card blue"><div class="an-num">' + op.total_assigned + '</div><div class="an-label">Total Assigned</div></div>' +
+          '<div class="an-card"><div class="an-num">' + op.active + '</div><div class="an-label">Active</div></div>' +
+          '<div class="an-card amber"><div class="an-num">₹' + earn.daily_earning.toLocaleString() + '</div><div class="an-label">Daily Earning</div></div>' +
+          '<div class="an-card"><div class="an-num">₹' + earn.weekly_earning.toLocaleString() + '</div><div class="an-label">Weekly Earning</div></div>' +
+          '<div class="an-card red"><div class="an-num">₹' + earn.commission_due.toLocaleString() + '</div><div class="an-label">Commission Due</div></div>' +
+          '<div class="an-card amber"><div class="an-num">' + rf.average_rating + '★</div><div class="an-label">Avg Rating</div></div>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px">' +
+          '<div class="profile-card" style="padding:16px"><h4 style="margin-bottom:12px;color:var(--navy);font-size:15px">Order Performance</h4><div style="height:160px"><canvas id="ordersBar"></canvas></div></div>' +
+          '<div class="profile-card" style="padding:16px"><h4 style="margin-bottom:12px;color:var(--navy);font-size:15px">Service Categories</h4><div style="height:160px; display:flex; justify-content:center"><canvas id="categoryPie"></canvas></div></div>' +
+          '<div class="profile-card" style="padding:16px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;"><h4 style="margin-bottom:16px;color:var(--gray-500);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:1px">Avg Completion Time</h4><div style="font-size:48px; font-weight:800; color:var(--green); letter-spacing:-1px;">' + we.avg_completion_minutes + '<span style="font-size:24px; font-weight:600; color:var(--gray-400); margin-left:4px;">min</span></div><p style="margin-top:16px; font-size:13px; color:var(--gray-400);">Current speed efficiency metric</p></div>' +
+          '<div class="profile-card" style="padding:16px; grid-column: 1 / -1"><h4 style="margin-bottom:12px;color:var(--navy);font-size:15px">EL Score Trend</h4><div style="height:200px"><canvas id="elScoreLineChart"></canvas></div></div>' +
+          '</div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px">' +
+          topSvcsBlock +
+          '</div>';
+
+        setTimeout(() => {
+          if (elecCharts.bar) elecCharts.bar.destroy();
+          const c1 = document.getElementById('ordersBar');
+          if (c1) elecCharts.bar = new Chart(c1, {
+            type: 'bar',
+            data: { labels: ['Completed', 'Assigned', 'Active'], datasets: [{ data: [op.completed, op.total_assigned, op.active], backgroundColor: ['#10b981', '#3b82f6', '#f59e0b'], borderRadius: 4 }] },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } }
+            }
+          });
+          const cats = Object.keys(sa.category_breakdown || {});
+          if (elecCharts.pie) elecCharts.pie.destroy();
+          const c2 = document.getElementById('categoryPie');
+          if (c2 && cats.length) elecCharts.pie = new Chart(c2, {
+            type: 'doughnut',
+            data: { labels: cats.map(c => c.split(' ')[0]), datasets: [{ data: cats.map(c => sa.category_breakdown[c]), backgroundColor: ['#1e3a5f', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#6366f1'], borderWidth: 2, borderColor: '#fff' }] },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 9 } } } }
+            }
+          });
+          if (elecCharts.line) elecCharts.line.destroy();
+          const c3 = document.getElementById('elScoreLineChart');
+          if (c3 && elScores.length) {
+            elecCharts.line = new Chart(c3, {
+              type: 'line',
+              data: { labels: elLabels, datasets: [{ label: 'EL Score', data: elScores, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', tension: 0.3, fill: true }] },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display:false } }, scales: { y: { min: Math.min(40, ...elScores) - 10, max: 100 } } }
+            });
+          }
+        }, 100);
+      } catch (e) { el.innerHTML = '<div class="empty-state">Analytics unavailable</div>'; }
+    }
+
+    async function loadEarningsHistory() {
+      const el = document.getElementById('earningsHistoryContent');
+      el.innerHTML = '<div class="loading-card">Loading earnings history...</div>';
+      try {
+        const history = await apiGet('/api/v1/earnings/history');
+        if (!history || !history.length) {
+          el.innerHTML = '<div class="empty-state" style="padding:48px;text-align:center;color:var(--gray-500)">' +
+            '<div style="font-size:40px;margin-bottom:12px">💰</div>' +
+            'No earnings history found. Complete jobs to see them here.</div>';
+          return;
+        }
+
+        const html = history.map(e => {
+          const midnightBadge = e.is_midnight_slot
+            ? '<span style="background:#7c3aed;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:8px;letter-spacing:0.5px">🌙 +₹50 Midnight</span>'
+            : '';
+          const slotLine = e.slot_label
+            ? `<div style="color:var(--gray-500);font-size:12px;margin-top:3px">🕐 ${e.slot_label}${midnightBadge}</div>`
+            : '';
+          const totalDisplay = e.is_midnight_slot
+            ? `<div style="color:var(--green);font-weight:800;font-size:18px">₹${(e.amount + e.midnight_bonus).toFixed(2)}</div>
+               <div style="color:#7c3aed;font-size:11px;font-weight:600">₹${e.amount.toFixed(2)} + ₹${e.midnight_bonus} bonus</div>`
+            : `<div style="color:var(--green);font-weight:800;font-size:18px">₹${e.amount.toFixed(2)}</div>`;
+
+          return `
+            <div class="profile-card" style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-left:4px solid ${e.is_midnight_slot ? '#7c3aed' : 'var(--green)'}">
+              <div>
+                <div style="color:var(--navy);font-weight:700;font-size:15px">${e.service_name}</div>
+                ${slotLine}
+                <div style="color:var(--gray-400);font-size:12px;margin-top:3px">📅 ${formatDateTime(e.date)}</div>
+                <div style="font-family:monospace;color:var(--gray-400);font-size:11px;margin-top:2px">Booking #${e.booking_id.substring(0,8).toUpperCase()}</div>
+              </div>
+              <div style="text-align:right">
+                ${totalDisplay}
+                <div style="color:var(--gray-400);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:2px">Earned</div>
+              </div>
+            </div>`;
+        }).join('');
+
+        el.innerHTML = '<div style="max-width:800px;margin:0 auto">' + html + '</div>';
+      } catch (e) {
+        el.innerHTML = '<div class="empty-state" style="color:var(--red)">Failed to load earnings history. Please try again.</div>';
+      }
+    }
+
+    // ── Reviews ───────────────────────────────────────────────────────
+    async function loadReviews() {
+      try {
+        if (typeof Chart === 'undefined') {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+          });
+        }
+        const [data, logs] = await Promise.all([
+          apiGet('/api/v1/analytics/electrician'),
+          apiGet('/api/v1/admin/electricians/' + myElectricianId + '/el-score-logs').catch(() => [])
+        ]);
+        const rf = data.rating_feedback;
+        document.getElementById('avgRatingDisplay').textContent = rf.average_rating + '★';
+        document.getElementById('totalReviewsDisplay').textContent = rf.total_reviews;
+        document.getElementById('posReviewsDisplay').textContent = rf.positive_reviews;
+
+        const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+        const reviewLogs = logs.filter(l => l.event && l.event.includes('review'));
+        reviewLogs.forEach(l => {
+          const stars = l.event.includes('5') ? 5 : l.event.includes('4') ? 4 : l.event.includes('3') ? 3 : l.event.includes('2') ? 2 : 1;
+          dist[stars]++;
+        });
+
+        setTimeout(() => {
+          if (elecCharts.ratingDist) elecCharts.ratingDist.destroy();
+          const ctx = document.getElementById('ratingDistChart');
+          if (ctx) elecCharts.ratingDist = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: ['5★', '4★', '3★', '2★', '1★'], datasets: [{ data: [dist[5], dist[4], dist[3], dist[2], dist[1]], backgroundColor: ['#10b981', '#34d399', '#f59e0b', '#f97316', '#ef4444'], borderRadius: 4 }] },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } }, indexAxis: 'y' }
+          });
+        }, 100);
+
+        const rl = document.getElementById('reviewsList');
+        if (!reviewLogs.length) { rl.innerHTML = '<p style="color:var(--gray-500)">No reviews yet. Complete orders to get reviews!</p>'; return; }
+        rl.innerHTML = reviewLogs.slice(0, 20).map(l => {
+          const stars = l.event.includes('5') ? 5 : l.event.includes('4') ? 4 : l.event.includes('3') ? 3 : l.event.includes('2') ? 2 : 1;
+          const color = stars >= 4 ? '#10b981' : stars === 3 ? '#f59e0b' : '#ef4444';
+          return '<div style="padding:14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+            '<div>' +
+            '<div style="font-size:20px;color:' + color + ';letter-spacing:2px">' + '★'.repeat(stars) + '☆'.repeat(5 - stars) + '</div>' +
+            '<div style="font-size:12px;color:var(--gray-500);margin-top:4px">' + formatDateTime(l.created_at) + '</div>' +
+            (l.notes ? '<div style="font-size:13px;color:var(--gray-700);margin-top:4px">' + l.notes + '</div>' : '') +
+            '</div>' +
+            '<div style="text-align:right">' +
+            '<div class="score-delta" style="color:' + (l.delta >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (l.delta >= 0 ? '+' : '') + l.delta + '</div>' +
+            '<div style="font-size:12px;color:var(--gray-500)">EL Score</div>' +
+            '</div>' +
+            '</div>';
+        }).join('');
+      } catch (e) { }
+    }
+
+    // ── EL Score Log ──────────────────────────────────────────────────
+    async function loadScoreLog() {
+      try {
+        const logs = await apiGet('/api/v1/admin/electricians/' + myElectricianId + '/el-score-logs').catch(() => []);
+        const el = document.getElementById('scoreLog');
+        if (!logs.length) { el.innerHTML = '<p style="color:var(--gray-500)">No score events yet.</p>'; return; }
+        
+        function getFriendlyTitle(evt) {
+          if (evt.includes('review_5')) return '🌟 5-Star Review Received';
+          if (evt.includes('review_4')) return '⭐ 4-Star Review Received';
+          if (evt.includes('review_3')) return '⭐ 3-Star Review Received';
+          if (evt.includes('review_2')) return '⚠️ 2-Star Review Received';
+          if (evt.includes('review_1')) return '❌ 1-Star Review Received';
+          if (evt === 'order_completed') return '✅ Job Completed Successfully';
+          if (evt === 'order_rejected') return '🚫 Assigned Job Passed/Rejected';
+          if (evt === 'order_failed') return '❌ Job Failed';
+          if (evt === 'slot_completed') return '⏱️ Time Slot Maintained';
+          if (evt === 'slot_cancel_future') return '📅 Cancelled Adv. Time Slot';
+          if (evt === 'slot_cancel_ongoing') return '🛑 Cancelled Ongoing Slot';
+          return evt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function getFriendlyNote(note, evt) {
+          if (!note) return '';
+          if (note.includes('Formula recalculation')) {
+            if (evt.includes('review')) return 'Score updated based on your recent customer rating.';
+            if (evt.includes('slot')) return 'Score updated due to schedule modifications.';
+            if (evt.includes('order')) return 'Performance recalibrated.';
+            return '';
+          }
+          return note;
+        }
+
+        el.innerHTML = logs.map(l => {
+          const title = getFriendlyTitle(l.event);
+          const note = getFriendlyNote(l.notes, l.event);
+          return '<div class="score-log-item ' + (l.delta >= 0 ? 'positive' : 'negative') + '">' +
+                 '<div><strong style="font-size:14px;color:var(--navy)">' + title + '</strong>' +
+                 (note ? '<br/><small style="color:var(--gray-600);display:inline-block;margin-top:2px">' + note + '</small>' : '') +
+                 '<br/><small style="color:var(--gray-400);margin-top:4px;display:inline-block">' + formatDateTime(l.created_at) + '</small></div>' +
+                 '<div class="score-delta">' + (l.delta >= 0 ? '+' : '') + l.delta.toFixed(1) + ' → <span style="font-size:12px;color:var(--gray-500)">' + l.score_after.toFixed(1) + '</span></div>' +
+                 '</div>';
+        }).join('');
+      } catch (e) { }
+    }
+
+    // ── Profile save ──────────────────────────────────────────────────
+    document.getElementById('profileForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const p = window._electricianProfile || {};
+      const eProf = p.electrician_profile || {};
+      const data = {
+        name: document.getElementById('pName').value,
+        email: document.getElementById('pEmail').value,
+        phone: document.getElementById('pPhone').value,
+        skills: eProf.skills || '', 
+        primary_skill: eProf.primary_skill || '',
+        experience_years: parseInt(document.getElementById('pExp').value) || 0,
+        toolkit: document.getElementById('pToolkit').value,
+        pincode: document.getElementById('pPincode').value,
+        district: 'Karimnagar', state: 'Telangana',
+        flat_no: document.getElementById('pFlat').value,
+        landmark: document.getElementById('pLandmark').value,
+        village: document.getElementById('pVillage').value,
+        full_address: document.getElementById('pAddress').value,
+      };
+      try {
+        await apiPut('/api/v1/users/me/electrician', data);
+        const alertEl = document.getElementById('profileAlertBox');
+        alertEl.textContent = '✅ Profile updated successfully!';
+        alertEl.className = 'alert success';
+        alertEl.classList.remove('hidden');
+        setTimeout(() => alertEl.classList.add('hidden'), 15000);
+        window._electricianProfile = null;
+        await loadProfile();
+      } catch (e) {
+        const alertEl = document.getElementById('profileAlertBox');
+        alertEl.textContent = e.message; alertEl.className = 'alert error'; alertEl.classList.remove('hidden');
+      }
+    });
+
+    async function saveSkills() {
+      const skills = document.getElementById('skillsHidden').value;
+      const primarySkill = document.getElementById('primarySkillHidden').value;
+      if (!primarySkill || !skills) { showToast('Please select category and sub-skills', 'error'); return; }
+
+      const p = window._electricianProfile || {};
+      const eProf = p.electrician_profile || {};
+      const cProf = p.customer_profile || {};
+
+      const data = {
+        name: p.name,
+        email: p.email,
+        phone: p.phone,
+        skills, 
+        primary_skill: primarySkill,
+        experience_years: eProf.experience_years || 0,
+        toolkit: eProf.toolkit || 'none',
+        pincode: cProf.pincode || '',
+        district: cProf.district || 'Karimnagar', 
+        state: cProf.state || 'Telangana',
+        flat_no: cProf.flat_no || '',
+        landmark: cProf.landmark || '',
+        village: cProf.village || '',
+        full_address: cProf.full_address || '',
+      };
+      
+      try {
+        await apiPut('/api/v1/users/me/electrician', data);
+        const alertEl = document.getElementById('skillsAlertBox');
+        alertEl.textContent = '✅ Skills updated successfully!';
+        alertEl.className = 'alert success';
+        alertEl.classList.remove('hidden');
+        setTimeout(() => alertEl.classList.add('hidden'), 5000);
+        window._electricianProfile = null;
+        await loadProfile();
+        _loaded.profile = false; // Force profile re-load if opened later
+      } catch (e) {
+        const alertEl = document.getElementById('skillsAlertBox');
+        alertEl.textContent = e.message; alertEl.className = 'alert error'; alertEl.classList.remove('hidden');
+      }
+    }
+
+    document.getElementById('pwdForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      try {
+        await apiPost('/api/v1/auth/change-password', {
+          old_password: document.getElementById('oldPwd').value,
+          new_password: document.getElementById('newPwd').value,
+          confirm_password: document.getElementById('confirmPwd').value,
+        });
+        showToast('Password updated successfully!', 'success');
+        e.target.reset();
+      } catch (e) { showToast(e.message, 'error'); }
+    });
+
+    // ── Real-time Location Tracking ──────────────────────────────────
+    let locationWatchId = null;
+    let lastLocationUpdate = 0;
+
+    function startLocationUpdates() {
+      if (!navigator.geolocation) {
+        console.warn('Geolocation not supported by this browser.');
+        return;
+      }
+
+      // Push IMMEDIATELY on first load (no throttle for first reading)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          updateLocationToServer(pos.coords.latitude, pos.coords.longitude);
+          lastLocationUpdate = Date.now();
+        },
+        (err) => { console.warn('Initial GPS:', err.message); },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+
+      // Then watch for continuous updates (throttled every 15s)
+      locationWatchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const now = Date.now();
+          if (now - lastLocationUpdate > 15000) {
+            updateLocationToServer(latitude, longitude);
+
+            // Sync local maps immediately
+            Object.keys(activeMaps).forEach(id => {
+              const map = activeMaps[id];
+              const marker = meMarkers[id];
+              const target = orderTargets[id];
+              if (map && marker && target) {
+                const pos = [latitude, longitude];
+                marker.setLatLng(pos);
+                drawOrderRoute(id, latitude, longitude, target[0], target[1], map);
+              }
+            });
+
+            lastLocationUpdate = now;
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error.message);
+          if (error.code === 1) {
+            // Permission denied — show toast only once
+            if (!window._gpsWarnShown) {
+              window._gpsWarnShown = true;
+              showToast('GPS permission denied. Customers cannot track your location.', 'error');
+            }
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 30000
+        }
+      );
+    }
+
+    async function updateLocationToServer(lat, lng) {
+      try {
+        // Only update if logged in as electrician
+        const role = localStorage.getItem('role');
+        if (role !== 'electrician') return;
+        // Send to both endpoints to ensure consistency
+        await apiPost('/api/v1/location/update', { lat, lng });
+        console.log('Location synchronized:', lat.toFixed(5), lng.toFixed(5));
+      } catch (e) {
+        console.error('Failed to sync location:', e.message);
+      }
+    }
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(locationWatchId);
+      }
+    });
+  </script>
+  {% endblock %}

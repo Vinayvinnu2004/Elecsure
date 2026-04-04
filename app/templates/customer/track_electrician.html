@@ -1,0 +1,352 @@
+{% extends "shared/base.html" %}
+{% block title %}Track Electrician — ElecSure{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  .track-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 100px);
+      background: var(--bg-card);
+      border-radius: var(--radius-card);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      overflow: hidden;
+  }
+  .track-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+  }
+  .track-header h2 { margin: 0; font-size: 1.25rem; }
+  .eta-badge {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10B981;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 8px 16px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+  }
+  #map {
+      flex: 1;
+      width: 100%;
+  }
+  .map-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      max-width: 300px;
+      backdrop-filter: blur(10px);
+  }
+  [data-theme="dark"] .map-overlay {
+      background: rgba(30, 41, 59, 0.9);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.1);
+  }
+  .sim-btn {
+      margin-top: 10px;
+      background: var(--navy);
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      width: 100%;
+  }
+  .sim-btn:hover { background: #1a2942; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dash-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><span class="bolt">⚡</span> ElecSure</div>
+    <div class="sidebar-user">
+      <div class="avatar" id="avatarCircle">C</div>
+      <div><strong id="sidebarName">Loading...</strong><br /><small>Customer</small></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/customer" class="nav-item">Dashboard</a>
+      <a href="/customer" class="nav-item active">Track Your Services</a>
+    </nav>
+    <br><br>
+    <p style="padding:0 20px;font-size:12px;color:var(--gray-500)">Tracking Booking #{{ booking_id }}</p>
+  </aside>
+
+  <div class="dash-main" style="padding:20px;">
+    <div class="track-container">
+        <div class="track-header">
+            <div>
+                <h2>Live Tracking</h2>
+                <p style="margin:4px 0 0; color:var(--gray-500); font-size:14px;" id="elecName">Electrician assigned</p>
+            </div>
+            <div class="eta-badge" id="etaBadge">
+                ⏳ Calculating ETA...
+            </div>
+        </div>
+        <div style="position: relative; flex: 1;">
+            <div id="map"></div>
+            <div class="map-overlay">
+                <h4 style="margin:0 0 10px;font-size:14px">Tracking Status</h4>
+                <div style="font-size:13px; margin-bottom: 6px;" id="routeDist">Distance: --</div>
+                <div style="font-size:13px; margin-bottom: 6px;" id="trackStatus">Connecting...</div>
+                
+                <div id="trackTimeline" style="margin-top:20px; border-top:1px solid var(--border-color); padding-top:15px">
+                   <div style="font-size:10px; font-weight:800; text-transform:uppercase; color:var(--gray-500); margin-bottom:12px">Execution Progress</div>
+                   <div id="timelineContainer" class="booking-timeline" style="transform:scale(0.85); transform-origin:left center; width:120%">
+                      <!-- Injected via JS -->
+                   </div>
+                </div>
+
+                <hr style="margin:10px 0; border:0; border-top:1px solid var(--border-color);">
+                <button class="sim-btn" onclick="toggleSimulation()" id="simBtn">Start Simulation</button>
+            </div>
+        </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let map, customerMarker, electricianMarker, routeLayer;
+  const bookingId = "{{ booking_id }}";
+  let customerLat, customerLng;
+  let electricianId;
+  let isSimulating = false;
+  let simInterval = null;
+  let trackInterval = null;
+  let simLat, simLng;
+
+  (async () => {
+    requireAuth(['customer']);
+    document.getElementById('sidebarName').textContent = localStorage.getItem('userName') || '';
+    document.getElementById('avatarCircle').textContent = (localStorage.getItem('userName') || 'C')[0].toUpperCase();
+    
+    await initTracking();
+  })();
+
+  const customerIcon = L.divIcon({
+      html: '<div style="background:white;width:40px;height:40px;border-radius:50%;border:2px solid #1e3a5f;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)"><img src="/static/img/customer_marker.png" style="width:100%;height:100%;object-fit:contain" alt="Customer Logo" /></div>',
+      iconSize: [40, 40], iconAnchor: [20, 20]
+  });
+
+  const elecIcon = L.divIcon({
+      html: '<div style="background:white;color:#5e35b1;width:38px;height:38px;border-radius:50%;border:3px solid #5e35b1;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 6px 16px rgba(0,0,0,.3)">⚡</div>',
+      iconSize: [38, 38], iconAnchor: [19, 19]
+  });
+
+  async function initTracking() {
+      try {
+          // 1. Get booking details
+          const b = await apiGet('/api/v1/bookings/' + bookingId);
+          
+          if (!b.electrician_id) {
+              document.getElementById('trackStatus').textContent = "No electrician assigned yet. Please wait.";
+              document.getElementById('etaBadge').textContent = '⏳ Awaiting assignment';
+              return;
+          }
+          
+          // The API returns flat fields (not nested objects)
+          electricianId = b.electrician_id;
+          const elecName = b.electrician_name || 'Electrician';
+          const statusText = b.status === 'ARRIVED' ? ' has arrived!' : ' is on the way';
+          document.getElementById('elecName').textContent = elecName + statusText;
+          
+          customerLat = b.latitude || 18.4386;
+          customerLng = b.longitude || 79.1288;
+          
+          // 2. Initialize map centered on customer location
+          map = L.map('map').setView([customerLat, customerLng], 14);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19, attribution: '&copy; OpenStreetMap'
+          }).addTo(map);
+          
+          // Place customer (home) marker
+          customerMarker = L.marker([customerLat, customerLng], { icon: customerIcon })
+              .addTo(map).bindPopup('Your Location (Service Address)');
+          
+          // 3. Fetch current electrician location
+          fetchElectrician();
+          trackInterval = setInterval(fetchElectrician, 5000);
+          
+          // Initial timeline
+          renderTimeline(b.status);
+          
+      } catch (e) {
+          console.error(e);
+          showToast('Failed to load tracking data', 'error');
+      }
+  }
+
+  function renderTimeline(status) {
+      const tlSteps = ['REQUESTED', 'ASSIGNED', 'ACCEPTED', 'ARRIVED', 'STARTED', 'COMPLETED'];
+      const tlLabels = {
+          'REQUESTED': 'booked',
+          'ASSIGNED': 'assigned',
+          'ACCEPTED': 'accepted',
+          'ARRIVED': 'arrived',
+          'STARTED': 'in progress',
+          'COMPLETED': 'completed'
+      };
+      
+      const container = document.getElementById('timelineContainer');
+      if (!container) return;
+      
+      container.innerHTML = tlSteps.map((key, i) => {
+          let cls = '';
+          if (status === 'REQUESTED') { if (i === 0) cls = 'active'; }
+          else if (status === 'ASSIGNED') { if (i < 1) cls = 'done'; else if (i === 1) cls = 'active'; }
+          else if (status === 'ACCEPTED') { if (i < 2) cls = 'done'; else if (i === 2) cls = 'active'; }
+          else if (status === 'ARRIVED') { if (i < 3) cls = 'done'; else if (i === 3) cls = 'active'; }
+          else if (status === 'STARTED') { if (i < 4) cls = 'done'; else if (i === 4) cls = 'active'; }
+          else if (status === 'COMPLETED' || status === 'REVIEWED') { cls = 'done'; }
+
+          return `<div class="tl-step ${cls}">
+              <div class="tl-dot">${cls === 'done' ? '✓' : (i + 1)}</div>
+              <div class="tl-label">${tlLabels[key]}</div>
+          </div>`;
+      }).join('');
+  }
+
+  async function fetchElectrician() {
+      if (isSimulating) return; // Simulation controls updates
+      
+      try {
+          // Primary: booking-level location endpoint (works for ACCEPTED & STARTED)
+          const res = await apiGet('/api/v1/location/' + bookingId);
+          
+          // Update timeline status if changed
+          if (res.booking_status) renderTimeline(res.booking_status);
+          
+          if (res.electrician_lat != null && res.electrician_lng != null) {
+              updateElectricianPosition(res.electrician_lat, res.electrician_lng);
+              document.getElementById('trackStatus').textContent = '🟢 Live Tracking';
+              return;
+          }
+          
+          // If electrician hasn't shared location yet  
+          if (!res.is_active) {
+              document.getElementById('trackStatus').textContent = '⏳ Electrician not yet active';
+          } else {
+              document.getElementById('trackStatus').textContent = '🟡 Waiting for electrician location...';
+          }
+      } catch (e) {
+          // Fallback: try user-level endpoint
+          try {
+              const res2 = await apiGet('/api/v1/users/electrician/' + electricianId + '/location');
+              if (res2.latitude != null && res2.longitude != null) {
+                  updateElectricianPosition(res2.latitude, res2.longitude);
+                  document.getElementById('trackStatus').textContent = '🟢 Live Tracking';
+              } else {
+                  document.getElementById('trackStatus').textContent = '🟡 Electrician location not yet shared';
+              }
+          } catch (e2) {
+              document.getElementById('trackStatus').textContent = '⏳ Connecting to electrician...';
+          }
+      }
+  }
+
+  function updateElectricianPosition(lat, lng) {
+      document.getElementById('trackStatus').textContent = '🟢 Live Tracking';
+      const pos = [lat, lng];
+      
+      if (!electricianMarker) {
+          electricianMarker = L.marker(pos, { icon: elecIcon }).addTo(map).bindPopup('Electrician');
+          // Center map to bounds
+          const bounds = L.latLngBounds([customerLat, customerLng], pos);
+          map.fitBounds(bounds, { padding: [50, 50] });
+      } else {
+          electricianMarker.setLatLng(pos);
+      }
+      
+      drawRoute(pos[0], pos[1]);
+  }
+
+  async function drawRoute(elat, elng) {
+      try {
+          // OSRM requires format: lng,lat;lng,lat
+          const url = `https://router.project-osrm.org/route/v1/driving/${elng},${elat};${customerLng},${customerLat}?overview=full&geometries=geojson`;
+          const res = await fetch(url);
+          const data = await res.json();
+          
+          if (data.routes && data.routes.length > 0) {
+              const route = data.routes[0];
+              const coords = route.geometry.coordinates;
+              // OSRM GeoJSON coords are [lng, lat], Leaflet wants [lat, lng]
+              const latlngs = coords.map(c => [c[1], c[0]]);
+              
+              if (routeLayer) map.removeLayer(routeLayer);
+              
+              routeLayer = L.polyline(latlngs, {
+                  color: '#3B82F6',
+                  weight: 5,
+                  opacity: 0.7,
+                  dashArray: '10, 10'
+              }).addTo(map);
+              
+              // ETA and Distance
+              const durationMins = Math.ceil(route.duration / 60);
+              const distanceKm = (route.distance / 1000).toFixed(1);
+              
+              document.getElementById('etaBadge').innerHTML = `⏱️ ETA: ${durationMins} min`;
+              document.getElementById('routeDist').textContent = `Distance: ${distanceKm} km`;
+          }
+      } catch (e) {
+          console.error("OSRM Route Error", e);
+      }
+  }
+
+  // --- Simulation ---
+  async function toggleSimulation() {
+      if (!isSimulating) {
+          isSimulating = true;
+          document.getElementById('simBtn').textContent = "Stop Simulation";
+          
+          // Generate realistic start point slightly away from customer
+          simLat = customerLat + (Math.random() * 0.05 - 0.025);
+          simLng = customerLng + (Math.random() * 0.05 - 0.025);
+          
+          // Force push initial to backend
+          await apiPost('/api/v1/location/update-location', {
+              electrician_id: electricianId,
+              lat: simLat,
+              lng: simLng
+          });
+          updateElectricianPosition(simLat, simLng);
+          
+          simInterval = setInterval(async () => {
+              // Move 10% closer to customer
+              simLat = simLat + (customerLat - simLat) * 0.1;
+              simLng = simLng + (customerLng - simLng) * 0.1;
+              
+              await apiPost('/api/v1/location/update-location', {
+                  electrician_id: electricianId,
+                  lat: simLat,
+                  lng: simLng
+              });
+              updateElectricianPosition(simLat, simLng);
+          }, 3000); // 3 sec during sim
+          
+      } else {
+          isSimulating = false;
+          clearInterval(simInterval);
+          document.getElementById('simBtn').textContent = "Start Simulation";
+      }
+  }
+</script>
+{% endblock %}

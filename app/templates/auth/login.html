@@ -1,0 +1,136 @@
+{% extends "shared/base.html" %}
+{% block title %}Login — ElecSure{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<div class="auth-container" style="min-height:80vh;align-items:center">
+  <div class="auth-card">
+    <div class="auth-logo"><a href="/"><span class="bolt">⚡</span> ElecSure</a></div>
+    <h2>Welcome Back</h2>
+    <p class="auth-sub">Sign in to your account</p>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <form id="loginForm" class="auth-form">
+      <div class="form-group">
+        <label>Email Address <span style="color:red">*</span></label>
+        <input type="email" name="email" id="email" placeholder="you@example.com" required autofocus />
+      </div>
+      <div class="form-group">
+        <label>Password <span style="color:red">*</span></label>
+        <div class="input-eye">
+          <input type="password" name="password" id="password" placeholder="Your password" required />
+          <button type="button" onclick="togglePwd('password')" class="eye-btn">👁</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+        <span id="loginText">Sign In</span>
+        <span id="loginSpinner" class="spinner hidden"></span>
+      </button>
+    </form>
+
+    <div class="auth-divider">or</div>
+
+    <a href="/api/v1/auth/google/login" class="btn-google" id="googleSignInBtn">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" height="20" alt="G">
+      Continue with Google
+    </a>
+
+    <div class="auth-links" style="margin-top:16px">
+      <p>New customer? <a href="/register">Create an account</a></p>
+      <p>Electrician? <a href="/register?role=electrician">Join as Electrician</a></p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+  .btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 20px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: var(--radius-sm);
+    background: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    color: #374151;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    margin-bottom: 4px;
+  }
+
+  .btn-google:hover {
+    background: #f9fafb;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+</style>
+<script>
+  // Show OAuth error from redirect
+  const _oauthErr = new URLSearchParams(window.location.search).get('error');
+  if (_oauthErr) {
+    const msgs = {
+      access_denied: 'Google sign-in was cancelled.',
+      google_failed: 'Google sign-in failed. Please try again.',
+      missing_profile: 'Could not retrieve your Google account info.',
+      account_deactivated: 'This account has been deactivated. Contact support.',
+      state_mismatch: 'Security check failed. Please try again.',
+    };
+    document.getElementById('alertBox').textContent = msgs[_oauthErr] || `Google error: ${_oauthErr}`;
+    document.getElementById('alertBox').className = 'alert alert-error';
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    const txt = document.getElementById('loginText');
+    const spin = document.getElementById('loginSpinner');
+    btn.disabled = true; txt.classList.add('hidden'); spin.classList.remove('hidden');
+
+    const data = {
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value,
+    };
+
+    try {
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      let json;
+      try {
+        json = await res.json();
+      } catch {
+        // Server returned non-JSON (HTML error page) — handle gracefully
+        throw new Error('Server error. Please check your .env configuration and restart the server.');
+      }
+
+      if (!res.ok) {
+        throw new Error(json.detail || 'Login failed. Please check your email and password.');
+      }
+
+      localStorage.setItem('token', json.access_token);
+      localStorage.setItem('role', json.role);
+      localStorage.setItem('userName', json.name);
+      showToast('Login successful!', 'success');
+
+      setTimeout(() => {
+        const role = json.role;
+        if (role === 'admin') window.location = '/admin';
+        else if (role === 'electrician') window.location = '/electrician';
+        else window.location = '/customer';
+      }, 400);
+
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  });
+</script>
+{% endblock %}

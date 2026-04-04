@@ -1,0 +1,232 @@
+{% extends "shared/base.html" %}
+{% block title %}Complete Your Profile — ElecSure{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<div class="auth-container" style="min-height:80vh;align-items:center">
+  <div class="auth-card auth-card-wide" style="max-width:600px">
+    <div class="auth-logo"><a href="/"><span class="bolt">⚡</span> ElecSure</a></div>
+    <h2>Almost Done! 🎉</h2>
+    <p class="auth-sub">Your Google sign-in was successful. Please complete your profile to continue.</p>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <!-- Google badge -->
+    <div
+      style="display:flex;align-items:center;gap:10px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px 16px;margin-bottom:20px">
+      <img src="https://www.google.com/favicon.ico" width="18" height="18" alt="Google">
+      <div>
+        <div style="font-weight:600;font-size:14px;color:#166534" id="googleName"></div>
+        <div style="font-size:12px;color:#6b7280" id="googleEmail"></div>
+      </div>
+      <span
+        style="margin-left:auto;font-size:12px;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-weight:600">✓
+        Google Verified</span>
+    </div>
+
+    <form id="completeForm" class="auth-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Mobile Number <span style="color:red">*</span></label>
+          <input type="tel" name="phone" id="phone" placeholder="9876543210" required maxlength="10" pattern="[0-9]{10}"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+        </div>
+        <div class="form-group" id="altPhoneGroup" style="display:none">
+          <label>Alternate Phone <span style="color:red">*</span></label>
+          <input type="tel" name="alternate_phone" id="alternate_phone" placeholder="9876500000" maxlength="10"
+            pattern="[0-9]{10}" oninput="this.value = this.value.replace(/[^0-9]/g, '');" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Flat / House No. <span style="color:red">*</span></label>
+          <input type="text" name="flat_no" id="flat_no" placeholder="e.g. Flat 2B, Galaxy Apts" required />
+        </div>
+        <div class="form-group">
+          <label>Landmark <span style="color:red">*</span></label>
+          <input type="text" name="landmark" id="landmark" placeholder="e.g. Near Post Office" required />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Village / Area <span style="color:red">*</span></label>
+          <input type="text" name="village" id="village" placeholder="e.g. Banjara Hills" required />
+        </div>
+        <div class="form-group">
+          <label>Pincode <span style="color:red">*</span></label>
+          <select name="pincode" id="pincode" class="pincode-select" required>
+            <option value="">Select Pincode</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>District</label>
+          <input type="text" name="district" id="district" value="Karimnagar" readonly
+            style="background:var(--gray-100)" />
+        </div>
+        <div class="form-group">
+          <label>State <span style="color:red">*</span></label>
+          <input type="text" name="state" id="state" value="Telangana" required />
+        </div>
+      </div>
+
+      <div id="elecFields" style="display:none">
+        <div class="form-section-label">⚡ Professional Details</div>
+        <div class="form-group">
+          <label>Main Skill Category <span style="color:red">*</span></label>
+          <select id="regMainSkill" onchange="loadRegSubSkills(this.value)">
+            <option value="">Select your main skill area</option>
+            <option>Electrical Appliance Repair</option>
+            <option>Wiring &amp; Circuit Repairs</option>
+            <option>Lighting Services</option>
+            <option>Installations</option>
+            <option>Safety Checks &amp; Inspections</option>
+            <option>Power Backup Services</option>
+            <option>Electrical Service Packages</option>
+          </select>
+        </div>
+        <div id="regSubSkillGroup" style="display:none; margin-top:10px">
+          <label>Sub Skills <span style="color:red">*</span></label>
+          <div id="regSubSkillCheckboxes" class="skills-grid"></div>
+          <input type="hidden" name="skills" id="skills" />
+          <input type="hidden" name="primary_skill" id="primary_skill" />
+        </div>
+        <div class="form-row" style="margin-top:15px">
+          <div class="form-group">
+            <label>Experience (years) <span style="color:red">*</span></label>
+            <input type="number" name="experience_years" id="experience_years" min="0" max="60" placeholder="e.g. 5" />
+          </div>
+          <div class="form-group">
+            <label>Toolkit Available</label>
+            <select name="toolkit" id="toolkit">
+              <option value="none">None</option>
+              <option value="basic">Basic</option>
+              <option value="advanced">Advanced</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" id="saveBtn">
+        <span id="saveTxt">Save &amp; Continue</span>
+        <span id="saveSpin" class="spinner hidden"></span>
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px;
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-sm);
+    background: #fff;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+</style>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  document.getElementById('googleName').textContent = params.get('name') || '';
+  document.getElementById('googleEmail').textContent = params.get('email') || '';
+
+  // Populate pincodes
+  document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('pincode');
+    Object.entries(KARIMNAGAR_PINCODES).forEach(([pin, area]) => {
+      sel.insertAdjacentHTML('beforeend', `<option value="${pin}">${pin} — ${area}</option>`);
+    });
+  });
+
+  const roleParam = params.get('role');
+  if (roleParam === 'electrician') {
+    document.getElementById('elecFields').style.display = 'block';
+    document.getElementById('altPhoneGroup').style.display = 'flex';
+
+    // Add required attributes
+    document.getElementById('alternate_phone').required = true;
+    document.getElementById('regMainSkill').required = true;
+    document.getElementById('experience_years').required = true;
+  }
+
+  function loadRegSubSkills(mainCat) {
+    const sg = document.getElementById('regSubSkillGroup');
+    const cb = document.getElementById('regSubSkillCheckboxes');
+    if (!mainCat) { sg.style.display = 'none'; return; }
+    const catKey = Object.keys(SERVICES_TAXONOMY).find(k => k === mainCat || k.includes(mainCat.split('&')[0].trim()));
+    const catData = catKey ? SERVICES_TAXONOMY[catKey] : null;
+    if (!catData) { sg.style.display = 'none'; return; }
+    sg.style.display = 'block';
+    cb.innerHTML = '';
+    Object.keys(catData.subcategories).forEach((sub, i) => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:6px;border-radius:4px;border:1px solid var(--gray-200)';
+      label.innerHTML = `<input type="checkbox" value="${sub}" onchange="updateRegSkills()" style="accent-color:var(--amber)"> ${sub}`;
+      cb.appendChild(label);
+    });
+    document.getElementById('primary_skill').value = mainCat;
+  }
+
+  function updateRegSkills() {
+    const checked = Array.from(document.querySelectorAll('#regSubSkillCheckboxes input:checked')).map(c => c.value);
+    document.getElementById('skills').value = checked.join(',');
+  }
+
+  document.getElementById('completeForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('saveBtn');
+    const txt = document.getElementById('saveTxt');
+    const spin = document.getElementById('saveSpin');
+    btn.disabled = true; txt.classList.add('hidden'); spin.classList.remove('hidden');
+
+    if (roleParam === 'electrician' && !document.getElementById('skills').value) {
+      showAlert('Please select at least one sub skill', 'error');
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+      return;
+    }
+
+    const body = {
+      phone: document.getElementById('phone').value.trim(),
+      alternate_phone: document.getElementById('alternate_phone') ? document.getElementById('alternate_phone').value.trim() : "",
+      pincode: document.getElementById('pincode').value,
+      flat_no: document.getElementById('flat_no').value.trim(),
+      landmark: document.getElementById('landmark').value.trim(),
+      village: document.getElementById('village').value.trim(),
+      district: 'Karimnagar',
+      state: document.getElementById('state').value.trim(),
+    };
+
+    if (roleParam === 'electrician') {
+      body.skills = document.getElementById('skills').value;
+      body.primary_skill = document.getElementById('primary_skill').value;
+      const exp = document.getElementById('experience_years').value;
+      if (exp) body.experience_years = parseInt(exp);
+      body.toolkit = document.getElementById('toolkit').value;
+    }
+
+    const putEndpoint = roleParam === 'electrician' ? '/api/v1/users/me/electrician' : '/api/v1/users/me';
+
+    try {
+      const json = await apiPut(putEndpoint, body);
+
+      // Store minimal info in localStorage so the dashboards work
+      if (json) {
+        localStorage.setItem('role', json.role || 'customer');
+        localStorage.setItem('userName', json.name || '');
+      }
+      showToast('Profile complete! Welcome to ElecSure ⚡', 'success');
+      setTimeout(() => { window.location = roleParam === 'electrician' ? '/electrician' : '/customer'; }, 1000);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,192 @@
+{% extends "shared/base.html" %}
+{% block title %}Verify Your Account — ElecSure{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<div class="auth-container" style="min-height:80vh;align-items:center">
+  <div class="auth-card" style="max-width:400px">
+    <div class="auth-logo"><a href="/"><span class="bolt">⚡</span> ElecSure</a></div>
+    <h2>Verify Your Identity</h2>
+    <p class="auth-sub" id="verifySub">We've sent a 6-digit code to your registered email and phone.</p>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <form id="verifyForm" class="auth-form" style="margin-top:24px">
+      <input type="hidden" id="verifyEmail" name="email" />
+      <div class="form-group">
+        <label
+          style="text-align:center;display:block;margin-bottom:8px;font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.05em">Email
+          OTP Code</label>
+        <div class="otp-input-container email-otp"
+          style="display:flex;gap:8px;justify-content:center;margin-bottom:20px">
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e1" required autofocus />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e2" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e3" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e4" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e5" required />
+          <input type="text" maxlength="1" class="otp-digit email-code" id="e6" required />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label
+          style="text-align:center;display:block;margin-bottom:8px;font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.05em">Mobile
+          OTP Code</label>
+        <div class="otp-input-container mobile-otp"
+          style="display:flex;gap:8px;justify-content:center;margin-bottom:24px">
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m1" required />
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m2" required />
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m3" required />
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m4" required />
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m5" required />
+          <input type="text" maxlength="1" class="otp-digit mobile-code" id="m6" required />
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" id="verifyBtn">
+        <span id="verifyText">Verify Account</span>
+        <span id="verifySpinner" class="spinner hidden"></span>
+      </button>
+    </form>
+
+    <div class="auth-links" style="text-align:center;margin-top:24px">
+      Didn't receive the code?
+      <button onclick="resendOTP()" id="resendBtn" class="link-btn"
+        style="background:none;border:none;color:var(--primary);font-weight:600;cursor:pointer;padding:0;font-family:inherit">Resend
+        Code</button>
+      <span id="resendTimer" class="hidden" style="color:var(--gray-500);font-size:13px"> (Wait <span
+          id="timerSec">60</span>s)</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  .otp-digit {
+    width: 48px;
+    height: 56px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+    border: 2px solid var(--gray-200);
+    border-radius: 8px;
+    background: var(--gray-50);
+    transition: all 0.2s;
+    color: var(--gray-800);
+  }
+
+  .otp-digit:focus {
+    border-color: var(--primary);
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(30, 58, 95, 0.1);
+    outline: none;
+  }
+
+  .link-btn:disabled {
+    color: var(--gray-400);
+    cursor: not-allowed;
+  }
+</style>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const emailFromUrl = urlParams.get('email');
+  if (emailFromUrl) {
+    document.getElementById('verifyEmail').value = emailFromUrl;
+    document.getElementById('verifySub').innerHTML = `We've sent a 6-digit code to <strong>${emailFromUrl}</strong><br/>Please check your inbox and SMS.`;
+  }
+
+  // Auto-focus logic
+  function setupOtpFocus(selector) {
+    const inputs = document.querySelectorAll(selector);
+    inputs.forEach((d, idx) => {
+      d.addEventListener('input', (e) => {
+        if (e.target.value && idx < inputs.length - 1) inputs[idx + 1].focus();
+      });
+      d.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && idx > 0) inputs[idx - 1].focus();
+      });
+    });
+  }
+  setupOtpFocus('.email-code');
+  setupOtpFocus('.mobile-code');
+
+  document.getElementById('verifyForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('verifyBtn');
+    const txt = document.getElementById('verifyText');
+    const spin = document.getElementById('verifySpinner');
+    const email = document.getElementById('verifyEmail').value;
+
+    if (!email) {
+      showAlert("Missing email. Please go back to registration.", "error");
+      return;
+    }
+
+    const code = Array.from(document.querySelectorAll('.email-code')).map(d => d.value).join('');
+    const mobile_code = Array.from(document.querySelectorAll('.mobile-code')).map(d => d.value).join('');
+
+    if (code.length < 6 || mobile_code.length < 6) {
+      showAlert("Please enter both 6-digit codes.", "error");
+      return;
+    }
+
+    btn.disabled = true; txt.classList.add('hidden'); spin.classList.remove('hidden');
+
+    try {
+      const res = await fetch('/api/v1/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, mobile_code }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || 'Verification failed');
+
+      showToast('Account verified! You can now login.', 'success');
+      setTimeout(() => { window.location = '/login'; }, 1000);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false; txt.classList.remove('hidden'); spin.classList.add('hidden');
+    }
+  });
+
+  let resendCooldown = 0;
+  async function resendOTP() {
+    if (resendCooldown > 0) return;
+    const email = document.getElementById('verifyEmail').value;
+    if (!email) return;
+
+    try {
+      const res = await fetch(`/api/v1/auth/resend-otp?email=${encodeURIComponent(email)}`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || 'Failed to resend');
+
+      showToast('New code sent successfully!', 'success');
+      startCooldown();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+
+  function startCooldown() {
+    resendCooldown = 60;
+    const btn = document.getElementById('resendBtn');
+    const timer = document.getElementById('resendTimer');
+    const sec = document.getElementById('timerSec');
+
+    btn.disabled = true;
+    timer.classList.remove('hidden');
+
+    const interval = setInterval(() => {
+      resendCooldown--;
+      sec.textContent = resendCooldown;
+      if (resendCooldown <= 0) {
+        clearInterval(interval);
+        btn.disabled = false;
+        timer.classList.add('hidden');
+      }
+    }, 1000);
+  }
+</script>
+{% endblock %}
