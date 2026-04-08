@@ -48,7 +48,7 @@ ElecSure solves this with verified professionals, transparent pricing, and real-
 
 ## 🔄 Booking Flow
 
-![Booking Flow](static/img/booking-flow.png)
+![Booking Flow](static/img/booking_flow.png)
 
 ---
 
