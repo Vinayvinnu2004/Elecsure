@@ -50,6 +50,7 @@ node_modules/
 
 # ── Temporary / Debug Files ──────────────────────────────────────────
 *.txt
+!requirements.txt
 *.bak
 *.tmp
 *.temp
