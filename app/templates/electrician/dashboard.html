@@ -332,6 +332,17 @@
     <section id="settingsSection" class="dash-section">
       <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
 
+        <!-- Pay Commission Card -->
+        <div class="profile-card" style="border: 2px solid var(--amber); background: rgba(245, 158, 11, 0.05); cursor:pointer" onclick="openSection('commissionPaymentSection')">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <div>
+              <h3 style="margin-bottom:4px">💳 Pay Commission Due</h3>
+              <div style="font-size:16px; font-weight:800; color:var(--navy)">Current Due: ₹<span id="settCommissionDue">0.00</span></div>
+            </div>
+            <button style="padding:8px 16px; background:var(--amber); color:white; border:none; border-radius:6px; font-weight:700; font-size:14px; cursor:pointer">View & Pay</button>
+          </div>
+        </div>
+
         <!-- Sensitive Email Change -->
         <div class="profile-card">
           <h3> Update Email Address</h3>
@@ -396,8 +407,71 @@
         </div>
 
       </div>
+    </section>
+  
+  <!-- Commission Payment Section -->
+  <section id="commissionPaymentSection" class="dash-section" style="align-items: center; justify-content: center; text-align: center;">
+      <div style="max-width:600px; margin:0 auto">
+          <button class="btn btn-ghost" onclick="openSection('settingsSection')" style="margin-bottom:20px; display:flex; align-items:center; gap:8px">← Back to Settings</button>
+          
+          <div class="profile-card" style="text-align:center; padding:40px 24px">
+              <h2 style="color:var(--navy); margin-bottom:8px">Pay Pending Commission</h2>
+              <div style="font-size:18px; color:var(--gray-500); margin-bottom:30px">Your Total Due: <strong style="color:var(--amber)">₹<span id="paymentDueAmount">0.00</span></strong></div>
+              
+              <div style="margin-bottom: 24px;">
+                  <button class="btn btn-outline" onclick="loadCommissionHistory(); openSection('commissionHistorySection')" style="display:inline-flex; align-items:center; gap:8px">
+                      <span class="bolt">📊</span> View Commission Due History
+                  </button>
+              </div>
 
-  </div>
+              <div style="background:#fff; border-radius:16px; padding:32px; border:1px solid var(--gray-200); box-shadow:0 12px 40px rgba(0,0,0,0.1); display:block; width:100%; max-width:460px; margin:0 auto">
+                  <img src="/static/img/commission_qr_branded.png" alt="ElecSure UPI QR" style="width:100%; max-width:400px; height:auto; border-radius:12px; border:1px solid var(--gray-100); box-shadow:0 10px 30px rgba(0,0,0,0.1); display:block; margin:0 auto">
+                  
+                  <div style="margin-top:24px">
+                      <div style="font-size:20px; font-weight:900; color:var(--navy)">ElecSure Platform</div>
+                      <div style="font-size:15px; color:var(--gray-600); margin-top:6px">UPI ID: <strong style="color:var(--amber)">elecsure@upi</strong></div>
+                      <div style="font-size:15px; color:var(--gray-600)">Phone: <strong style="color:var(--navy)">91000 00000</strong></div>
+                  </div>
+                  
+                  <div style="margin-top:30px; padding:16px; background:var(--gray-50); border-radius:10px; font-size:13px; color:var(--gray-500); line-height:1.6">
+                      <span style="display:block; margin-bottom:8px; font-weight:700; color:var(--navy)">HOW TO PAY:</span>
+                      1. Scan the QR code using any UPI app (GPay, PhonePe, Paytm).<br>
+                      2. Enter the amount you wish to pay.<br>
+                      3. Complete the transaction in your app.
+                  </div>
+              </div>
+          </div>
+      </div>
+  </section>
+
+  <!-- Commission History Section -->
+  <section id="commissionHistorySection" class="dash-section">
+      <div style="max-width:800px; margin:0 auto">
+          <button class="btn btn-ghost" onclick="openSection('commissionPaymentSection')" style="margin-bottom:20px; display:flex; align-items:center; gap:8px">← Back to Payment</button>
+          
+          <div class="profile-card">
+              <h2 style="color:var(--navy); margin-bottom:16px">Commission Due History</h2>
+              <p style="color:var(--gray-500); font-size:14px; margin-bottom:24px">Weekly breakdown of earnings and respective commission dues.</p>
+              
+              <div class="table-wrap">
+                  <table class="data-table">
+                      <thead>
+                          <tr>
+                              <th>Week Start</th>
+                              <th>Week End</th>
+                              <th>Total Earned</th>
+                              <th>Commission Due</th>
+                          </tr>
+                      </thead>
+                      <tbody id="commissionHistoryBody">
+                          <tr><td colspan="4" style="text-align:center; padding:32px; color:var(--gray-400)">Loading history...</td></tr>
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      </div>
+  </section>
+</div>
 
   <!-- Order Modal -->
   <div id="orderModal" class="modal hidden">
@@ -513,7 +587,8 @@
         'skillsSection': 'Manage Skills',
         'profileSection': 'My Profile',
         'scoreSection': 'EL Score Log',
-        'settingsSection': 'Settings'
+        'settingsSection': 'Settings',
+        'commissionPaymentSection': 'Pay Commission'
       };
       if (titles[id]) document.getElementById('dashTitle').textContent = titles[id];
 
@@ -691,6 +766,47 @@
           if (pwdBtn) pwdBtn.textContent = 'Set Account Password';
         }
       } catch (e) { }
+    }
+
+    async function loadCommissionHistory() {
+      const tbody = document.getElementById('commissionHistoryBody');
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:32px; color:var(--gray-400)">Loading history...</td></tr>';
+      
+      try {
+        const reports = await apiGet('/api/v1/earnings/weekly-reports');
+        if (!reports || reports.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:32px; color:var(--gray-400)">No commission history found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = reports.map(rep => {
+          const isSettlement = (rep.week_start === rep.week_end);
+          const start = new Date(rep.week_start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          const end = new Date(rep.week_end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+          
+          if (isSettlement) {
+            return `
+              <tr style="background: rgba(34, 197, 94, 0.05)">
+                <td colspan="2" style="font-weight:700; color:var(--green)">✓ Settlement recorded on ${start}</td>
+                <td style="font-weight:600; color:var(--gray-400)">Balance Cleared</td>
+                <td style="color:var(--green); font-weight:800">₹${rep.commission_due.toFixed(2)}</td>
+              </tr>
+            `;
+          }
+          
+          return `
+            <tr>
+              <td style="white-space:nowrap">${start}</td>
+              <td style="white-space:nowrap">${end}</td>
+              <td style="font-weight:600">₹${rep.total_earned.toFixed(2)}</td>
+              <td style="color:var(--amber); font-weight:700">₹${rep.commission_due.toFixed(2)}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Load history error:', err);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:32px; color:var(--red)">Failed to load history. Please try again.</td></tr>';
+      }
     }
 
     // ── Profile form (lazy, only when section opened) ─────────────────

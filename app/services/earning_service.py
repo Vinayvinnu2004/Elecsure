@@ -164,6 +164,17 @@ async def clear_commission_due(db: AsyncSession, electrician_id: str, amount: fl
     
     earnings.commission_due = (earnings.commission_due or 0.0) - amount
     
+    # Notify payment
+    from app.services import notification_service
+    # We need user name/email, so we might need more loading if not available
+    # But for now, we'll try to get it from the session if joined or just do a quick look up
+    r_user = await db.execute(select(User).where(User.id == electrician_id))
+    u = r_user.scalar_one_or_none()
+    if u:
+        _bg_task(notification_service.notify_elec_commission_cleared(
+            u.email, u.name, float(amount), float(earnings.commission_due)
+        ))
+
     # Auto-unrestrict if they dropped below the high threshold
     if earnings.commission_due <= 3000:
         r_prof = await db.execute(
@@ -180,6 +191,22 @@ async def clear_commission_due(db: AsyncSession, electrician_id: str, amount: fl
                 
                 logger.info(f"Electrician {electrician_id} balance cleared. Restricted Mode removed and availability restored.")
     
+    # Record this clearance in commission history
+    try:
+        from app.models.earnings import WeeklyReport
+        now = ist_now()
+        # Create a "Clearance" report entry (week_start == week_end signifies a payment/clearance)
+        clearance_report = WeeklyReport(
+            electrician_id=electrician_id,
+            total_earned=0.0,
+            commission_due=earnings.commission_due,
+            week_start=now,
+            week_end=now
+        )
+        db.add(clearance_report)
+    except Exception as e:
+        logger.error(f"Failed to record commission clearance in history: {e}")
+
     await db.commit()
     return True
 

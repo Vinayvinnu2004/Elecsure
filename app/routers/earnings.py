@@ -97,3 +97,22 @@ async def get_earnings_history(user: User = Depends(require_electrician), db: As
         })
     return history
 
+@router.get("/weekly-reports")
+async def get_weekly_reports(user: User = Depends(require_electrician), db: AsyncSession = Depends(get_db)):
+    """Retrieve history of weekly commission reports."""
+    from app.models.earnings import WeeklyReport
+    r = await db.execute(
+        select(WeeklyReport)
+        .where(WeeklyReport.electrician_id == user.id)
+        .order_by(WeeklyReport.week_start.desc())
+    )
+    reports = r.scalars().all()
+    return [{
+        "id": str(rep.id),
+        "week_start": rep.week_start.isoformat(),
+        "week_end": rep.week_end.isoformat(),
+        "total_earned": float(rep.total_earned),
+        "commission_due": float(rep.commission_due),
+        "created_at": rep.created_at.isoformat()
+    } for rep in reports]
+
