@@ -60,7 +60,7 @@ ElecSure solves this with verified professionals, transparent pricing, and real-
 -   **Frontend**: Vanilla JS, Modern CSS (Glassmorphism), HTML5
 -   **Payments**: Stripe API
 -   **Messaging**: Twilio (SMS/OTP)
--   **AI Engine**: Groq (Llama 3.1) & Google Gemini 2.0 Flash
+-   **AI Engine**: Groq (Llama 3.1)
 -   **Task Runner**: APScheduler (Background jobs)
 -   **Authentication**: JWT (Stateless) with Secure Password Hashing (Bcrypt)
 
@@ -100,7 +100,7 @@ ElecSure provides RESTful APIs for authentication, booking, payments, and AI ass
 ### 1. Prerequisites
 -   Python 3.10+
 -   MySQL 8.0+
--   (Optional) Groq or Gemini API Key
+-   Groq API Key
 
 ### 2. Environment Setup
 Clone the repository and create a virtual environment:

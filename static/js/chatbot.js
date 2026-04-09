@@ -237,98 +237,54 @@ CRITICAL DATA PRIVACY RULES:
     }
   }
 
-  // ── AI API Call (Groq or Gemini) ──────────────────────────────────────────
+  // ── AI API Call (Groq) ──────────────────────────────────────────
   async function callAI(userText) {
-    if (!geminiKey && !window.groqKey) {
-      return "⚠️ AI assistant is not configured. Please add GROQ_API_KEY or GEMINI_API_KEY to your server .env file.";
+    if (!window.groqKey) {
+      return "⚠️ AI assistant is not configured. Please add GROQ_API_KEY to your server .env file.";
     }
 
-    // 1. Prioritize Groq (Llama-3-8b-8192) if key exists (OpenAI format)
-    if (window.groqKey) {
-      const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
-      
-      // Convert Gemini message format to OpenAI format
-      const openaiMessages = [
-        { role: "system", content: getSystemPrompt() },
-        ...messages.map(m => ({
-          role: m.role === "model" ? "assistant" : "user",
-          content: m.parts[0].text
-        }))
-      ];
-
-      try {
-        const res = await fetch(groqUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${window.groqKey}`
-          },
-          body: JSON.stringify({
-            model: "llama-3.1-8b-instant",
-            messages: openaiMessages,
-            temperature: 0.7,
-            max_tokens: 1024
-          }),
-        });
-
-        if (res.status === 429) {
-          return "⚠️ Groq rate limit reached. Please wait a moment.";
-        }
-
-        const data = await res.json();
-        if (!res.ok) {
-          return "❌ Groq request failed. Error: " + (data.error?.message || res.statusText);
-        }
-        return data.choices?.[0]?.message?.content || "⚠️ No response from Groq AI.";
-      } catch (e) {
-        console.warn("Groq error:", e);
-        return "⚠️ Network error connecting to Groq. Please try again.";
-      }
-    }
-
-    // 2. Fallback to Gemini if no Groq Key
-    const MODELS = [
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-1.5-flash-latest",
+    const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
+    
+    const messagesBody = [
+      { role: "system", content: getSystemPrompt() }
     ];
-
-    const body = {
-      system_instruction: { parts: [{ text: getSystemPrompt() }] },
-      contents: messages,
-    };
-
-    for (const model of MODELS) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+    
+    // Add history
+    messages.forEach(m => {
+        messagesBody.push({
+            role: m.role === "model" ? "assistant" : "user",
+            content: (m.parts && m.parts[0]) ? m.parts[0].text : (m.content || "")
         });
+    });
 
-        if (res.status === 429) {
-          console.warn(`Rate limited by Google Cloud on ${model}.`);
-          return "⚠️ Google AI rate limit reached. Please wait 1 full minute before messaging again.";
-        }
+    try {
+      const res = await fetch(groqUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${window.groqKey}`
+        },
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          messages: messagesBody,
+          temperature: 0.7,
+          max_tokens: 1024
+        }),
+      });
 
-        const data = await res.json();
-
-        if (!res.ok) {
-          if (res.status === 400 || res.status === 403) {
-            return "❌ Gemini API key is invalid. Please check GEMINI_API_KEY in your server .env file.";
-          }
-          continue;
-        }
-
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ No response from AI.";
-      } catch (e) {
-        continue;
+      if (res.status === 429) {
+        return "⚠️ Groq rate limit reached. Please wait a moment.";
       }
-    }
 
-    return "⚠️ AI is temporarily unavailable. Please try again later.";
+      const data = await res.json();
+      if (!res.ok) {
+        return "❌ Groq request failed. Error: " + (data.error?.message || res.statusText);
+      }
+      return data.choices?.[0]?.message?.content || "⚠️ No response from Groq AI.";
+    } catch (e) {
+      console.warn("Groq error:", e);
+      return "⚠️ Network error connecting to Groq. Please try again.";
+    }
   }
 
 

@@ -56,24 +56,42 @@ def _extract_id(msg: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-async def _gemini_reply(prompt: str, history: list) -> Optional[str]:
-    """Call Gemini API with 3s timeout. Returns None if unavailable or slow."""
-    if not settings.GEMINI_API_KEY:
+async def _groq_reply(prompt: str, history: list) -> Optional[str]:
+    """Call Groq API (Llama-3) with 5s timeout. Returns None if unavailable."""
+    if not settings.GROQ_API_KEY:
         return None
     try:
-        import asyncio
-        import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-pro")
-        formatted = [{"role": t.get("role","user"), "parts":[t.get("content","")]} for t in history[-6:]]
-        async def _call():
-            if formatted:
-                chat = model.start_chat(history=formatted)
-                return (await chat.send_message_async(prompt)).text
-            return (await model.generate_content_async(prompt)).text
-        return await asyncio.wait_for(_call(), timeout=3.0)
+        import httpx
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        # Convert history format to OpenAI format
+        messages = [{"role": "system", "content": "You are a helpful assistant for ElecSure."}]
+        for h in history[-6:]:
+            role = "assistant" if h.get("role") == "model" else "user"
+            messages.append({"role": role, "content": h.get("content", "")})
+        
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1024
+        }
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json=payload, timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+            else:
+                logger.warning("Groq API failed: %d - %s", resp.status_code, resp.text)
+                return None
     except Exception as e:
-        logger.warning("Gemini skipped: %s", type(e).__name__)
+        logger.warning("Groq skipped: %s", str(e))
         return None
 
 
@@ -183,7 +201,7 @@ Recent Bookings:
 Rules: Be concise, friendly. Tell them how to use the dashboard if they ask about something you can't do here.
 Message: {message}"""
 
-    reply = await _gemini_reply(system_prompt, history)
+    reply = await _groq_reply(system_prompt, history)
     if reply: return {"reply": reply, "action": None, "action_data": None}
 
     return {"reply": "I'm here to help! Try 'my bookings', 'cancel #ID', or 'track electrician'.", "action": None, "action_data": None}
@@ -300,7 +318,7 @@ Recent Orders:
 Rules: Professional, concise. Help with order management.
 Message: {message}"""
 
-    reply = await _gemini_reply(system_prompt, history)
+    reply = await _groq_reply(system_prompt, history)
     if reply: return {"reply": reply, "action": None, "action_data": None}
 
     return {"reply": "I can help with orders! Try 'my orders', 'accept #ID', or 'go online'.", "action": None, "action_data": None}
@@ -405,7 +423,7 @@ You help visitors learn about ElecSure services, how to book, pricing, and cover
 Keep responses short (3-5 lines), friendly, and always encourage them to register or login.
 Visitor message: {message}"""
 
-    reply = await _gemini_reply(system_prompt, history)
+    reply = await _groq_reply(system_prompt, history)
     if reply:
         return {"reply": reply, "action": None, "action_data": None}
 

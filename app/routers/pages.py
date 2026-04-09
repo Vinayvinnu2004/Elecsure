@@ -72,7 +72,6 @@ async def admin_dashboard(request: Request):
 async def chatbot_config():
     """Return AI API keys to the chatbot frontend."""
     return {
-        "gemini_key": settings.GEMINI_API_KEY or "",
         "groq_key": settings.GROQ_API_KEY or ""
     }
 
