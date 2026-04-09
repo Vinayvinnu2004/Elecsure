@@ -23,7 +23,7 @@ from app.models import (
 from app.schemas.booking import BookingCreate, ReviewCreate
 from app.services.matching_service import assign_booking
 from app.services.notification_service import (
-    notify_booking_created, notify_elec_new_order, notify_booking_cancelled,
+    notify_booking_created, notify_booking_assigned, notify_elec_new_order, notify_booking_cancelled,
     notify_booking_accepted, notify_elec_order_accepted, notify_booking_arrived,
     notify_booking_started, notify_elec_service_started, notify_booking_completed,
     notify_elec_service_completed, notify_review_given, notify_elec_review_received
@@ -138,6 +138,8 @@ class BookingService:
             if b:
                 if await assign_booking(bg_db, b):
                     await record_history(bg_db, b.id, b.status, notes="Electrician assigned auto", changed_by="system")
+                    await notify_booking_assigned(bg_db, b)
+                    await notify_elec_new_order(bg_db, b)
                 await notify_booking_created(bg_db, b)
             else:
                 logger.error(f"Background task could not find booking {b_id} even after delay.")
@@ -208,7 +210,7 @@ class BookingService:
         await record_history(db, b.id, STATUS_REVIEWED, notes=f"Review given: {data.rating} stars", changed_by=user.id)
 
         if b.electrician_id:
-            await apply_review_score(db, str(b.electrician_id), data.rating, b.id)
+            await apply_review_score(db, str(b.electrician_id), data.rating, b.id, comment=data.comment)
 
         await db.commit()
         
@@ -218,7 +220,7 @@ class BookingService:
             if (rv := r.scalar_one_or_none()):
                 await notify_review_given(bg_db, rv)
                 if rv.booking and rv.booking.electrician_id:
-                    await notify_elec_review_received(bg_db, rv.booking.electrician_id, rv)
+                    await notify_elec_review_received(bg_db, rv)
         
         _bg_task(_notify_review, rev.id)
         return rev

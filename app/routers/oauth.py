@@ -27,6 +27,7 @@ def _set_jwt_cookies(response: Response, access: str, refresh: str):
         max_age=30 * 60,  # 30 mins
         samesite="lax",
         secure=False,      # Set to True in HTTPS production
+        path="/",
     )
     response.set_cookie(
         key="refresh_token",
@@ -35,6 +36,7 @@ def _set_jwt_cookies(response: Response, access: str, refresh: str):
         max_age=7 * 24 * 3600, # 7 days
         samesite="lax",
         secure=False,
+        path="/",
     )
 
 # -- Google OAuth Flow ------------------------------------------------

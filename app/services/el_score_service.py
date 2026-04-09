@@ -279,7 +279,7 @@ async def apply_el_event(
     profile.el_score = score_after
 
     # Write event log with backdated timestamp — it will appear below the adjustment entry
-    if delta != 0.0:
+    if delta != 0.0 or "review" in event:
         log = ELScoreLog(
             electrician_id=electrician_id,
             event=event,
@@ -333,16 +333,18 @@ async def apply_el_event(
 
 
 async def apply_review_score(
-    db: AsyncSession, electrician_id: str, rating: int, booking_id: str
+    db: AsyncSession, electrician_id: str, rating: int, booking_id: str, comment: str | None = None
 ) -> float:
     event_map = {
         5: ELScoreEvent.REVIEW_5_STAR, 4: ELScoreEvent.REVIEW_4_STAR,
         3: ELScoreEvent.REVIEW_3_STAR, 2: ELScoreEvent.REVIEW_2_STAR,
         1: ELScoreEvent.REVIEW_1_STAR,
     }
+    # Use comment as notes if provided, otherwise default
+    notes = comment if comment else f"{rating}-star review"
     return await apply_el_event(
         db, electrician_id, event_map.get(rating, ELScoreEvent.REVIEW_3_STAR),
-        booking_id=booking_id, notes=f"{rating}-star review",
+        booking_id=booking_id, notes=notes,
     )
 
 

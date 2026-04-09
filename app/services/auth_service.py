@@ -51,8 +51,8 @@ class AuthService:
 
     @staticmethod
     async def set_auth_cookies(response: Response, token_resp: TokenResponse):
-        response.set_cookie(key="access_token", value=token_resp.access_token, httponly=True, max_age=30*60, samesite="lax")
-        response.set_cookie(key="refresh_token", value=token_resp.refresh_token, httponly=True, max_age=7*24*3600, samesite="lax")
+        response.set_cookie(key="access_token", value=token_resp.access_token, httponly=True, max_age=30*60, samesite="lax", path="/")
+        response.set_cookie(key="refresh_token", value=token_resp.refresh_token, httponly=True, max_age=7*24*3600, samesite="lax", path="/")
 
     @staticmethod
     async def start_registration(db: AsyncSession, data: Any, role: str, background_tasks: BackgroundTasks) -> str:

@@ -1,7 +1,5 @@
 """
 app/services/notification_service.py — Multi-provider email & SMS notifications.
-Supports: Email (SMTP), SMS (AWS SNS, MSG91, Nexmo, Twilio), Verification Links.
-Complete set of notification functions covering all booking lifecycle events.
 """
 
 import logging
@@ -9,11 +7,18 @@ import random
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 import aiosmtplib
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import ist_now
+
+if TYPE_CHECKING:
+    from app.models import Booking, User, Review
 
 logger = logging.getLogger(__name__)
 
@@ -46,333 +51,258 @@ async def send_email(to: str, subject: str, html_body: str) -> bool:
 
 
 async def send_sms(to_number: str, message: str) -> bool:
-    """Send SMS using Twilio exclusively."""
-    if not to_number:
-        logger.warning("No phone number provided for SMS")
-        return False
-    
+    if not to_number: return False
     to_number = to_number.strip()
-    if not to_number.startswith("+"):
-        to_number = "+91" + to_number.lstrip("0")
-    
+    if not to_number.startswith("+"): to_number = "+91" + to_number.lstrip("0")
     if settings.DEBUG:
-        logger.info("DEBUG MODE: SMS to %s | Message: %s", to_number, message)
+        logger.info("DEBUG MODE: SMS to %s | %s", to_number, message)
         return True
-    
-    # Twilio is the ONLY allowed provider
     if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
-        logger.info("Attempting Twilio SMS to %s", to_number)
         return await _send_sms_twilio(to_number, message)
-    
-    logger.error("Twilio not configured in .env — cannot send SMS")
     return False
 
 
-
-
-
-
 async def _send_sms_twilio(to_number: str, message: str) -> bool:
-    """Send SMS using Twilio API."""
     try:
         from twilio.rest import Client
-        from twilio.base.exceptions import TwilioException
-        
-        logger.info("Attempting Twilio SMS to %s from %s", to_number, settings.TWILIO_PHONE_NUMBER)
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        
-        # Test client connection first
-        account = client.api.accounts(settings.TWILIO_ACCOUNT_SID).fetch()
-        logger.info("Twilio account status: %s", account.status)
-        
-        twilio_message = client.messages.create(
-            body=message,
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=to_number,
-        )
-        logger.info("SMS sent via Twilio → %s | SID: %s | Status: %s", to_number, twilio_message.sid, twilio_message.status)
+        client.messages.create(body=message, from_=settings.TWILIO_PHONE_NUMBER, to=to_number)
         return True
-    except TwilioException as twilio_exc:
-        logger.error("Twilio SMS failed → %s | Twilio Error: %s | Code: %s", to_number, str(twilio_exc), getattr(twilio_exc, 'code', 'N/A'))
-        return False
     except Exception as exc:
-        logger.error("Twilio SMS error → %s | %s", to_number, str(exc))
+        logger.error("Twilio failed: %s", str(exc))
         return False
 
 
 # ── Template Helpers ──────────────────────────────────────────────────
 
 def _row(label: str, value: str) -> str:
-    return f'<tr><td style="padding:10px 14px;background:#f3f4f6;font-weight:600;width:38%;font-size:13px;color:#374151">{label}</td><td style="padding:10px 14px;font-size:14px;color:#111827">{value}</td></tr>'
+    return f'<tr><td style="padding:16px;background:#1f2937;font-weight:700;width:40%;font-size:13px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #374151">{label}</td><td style="padding:16px;background:#1f2937;font-size:16px;color:#fff;font-weight:600;border-bottom:1px solid #374151">{value}</td></tr>'
 
 def _table(*rows: str) -> str:
-    return '<table style="width:100%;border-collapse:separate;border-spacing:0 3px;margin:18px 0">' + "".join(rows) + "</table>"
+    return '<table style="width:100%;border-collapse:collapse;margin:24px 0;border-radius:12px;overflow:hidden;border:1px solid #374151">' + "".join(rows) + "</table>"
 
 def _template(title: str, body: str, cta_url: str = "", cta_text: str = "") -> str:
-    cta = f'<a href="{cta_url}" style="display:inline-block;margin-top:22px;padding:13px 30px;background:#f59e0b;color:#1a1a1a;font-weight:700;font-size:15px;border-radius:8px;text-decoration:none">{cta_text}</a>' if cta_url else ""
+    cta = f'<div style="text-align:center;margin-top:30px"><a href="{cta_url}" style="display:inline-block;padding:14px 40px;background:#f59e0b;color:#1a1a1a;font-weight:800;font-size:16px;border-radius:10px;text-decoration:none;box-shadow:0 4px 12px rgba(245,158,11,0.3)">{cta_text}</a></div>' if cta_url else ""
     year = ist_now().year
     return f"""
-<div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
-  <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2d5a8e 100%);padding:32px 28px;text-align:center">
-    <div style="font-size:28px;font-weight:900;color:#fff;letter-spacing:-0.5px">&#x26A1; ElecSure</div>
-    <div style="color:#fde68a;font-size:13px;margin-top:4px">Professional Home Electrical Services</div>
+<div style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#111827;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.2)">
+  <div style="background:linear-gradient(135deg,#1e3a5f 0%,#2d5a8e 100%);padding:40px 20px;text-align:center;border-bottom:4px solid #f59e0b">
+    <div style="font-size:32px;font-weight:900;color:#fff;letter-spacing:-1px">
+      <span style="color:#f59e0b">&#x26A1;</span> ElecSure
+    </div>
+    <div style="color:#fde68a;font-size:14px;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:1px">Professional Home Electrical Services</div>
   </div>
-  <div style="padding:32px 28px">
-    <h2 style="color:#1e3a5f;font-size:20px;font-weight:700;margin:0 0 20px;padding-bottom:14px;border-bottom:2px solid #f59e0b">{title}</h2>
-    <div style="color:#374151;font-size:15px;line-height:1.75">{body}</div>
+  <div style="padding:40px 32px">
+    <h1 style="color:#fff;font-size:24px;font-weight:800;margin:0 0 24px;border-bottom:2px solid #374151;padding-bottom:12px">{title}</h1>
+    <div style="color:#d1d5db;font-size:16px;line-height:1.8">
+      {body}
+    </div>
     {cta}
   </div>
-  <div style="background:#f9fafb;padding:18px 28px;text-align:center;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af">
-    &copy; {year} ElecSure &nbsp;|&nbsp; Support: {settings.SUPPORT_PHONE}&nbsp;|&nbsp; Automated message — please do not reply.
+  <div style="background:#1f2937;padding:24px 32px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #374151">
+    <p style="margin:0">Thank you for choosing <strong>ElecSure</strong> &nbsp;&#x26A1;</p>
+    <p style="margin:8px 0 0">&copy; {year} ElecSure. Professional Service Guaranteed. &nbsp;|&nbsp; Support: {settings.SUPPORT_PHONE}</p>
   </div>
 </div>"""
 
 
-# ── FEATURE 1: OTP ───────────────────────────────────────────────────
+# ── Notifications ─────────────────────────────────────────────────────
 
 async def notify_otp(to_email: str, to_phone: str, email_otp: str, mobile_otp: str, purpose: str = "registration") -> None:
-    """Send email OTP for verification. Mobile SMS is disabled."""
-    subject = "Verification Code — ElecSure"
-    verb = "registering with" if purpose == "registration" else "resetting your password on"
-    body = f"""<p>Hi there,</p>
-    <p>Thank you for {verb} <strong>ElecSure</strong>. Please use the following One-Time Password (OTP) to verify your account:</p>
-    <div style="background:#f3f4f6;padding:24px;text-align:center;margin:20px 0;border-radius:12px;border:1px dashed #ced4da">
-        <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#1e3a5f">{email_otp}</span>
-    </div>
-    <p style="text-align:center;color:#6b7280;font-size:14px">This code expires in <strong>10 minutes</strong>. Never share this with anyone. If you did not request this, please ignore this email.</p>"""
-    
-    await send_email(to_email, subject, _template("Verify Your Account", body))
+    verb = "registering" if purpose == "registration" else "accessing your account"
+    body = f"""<p>Hi,</p><p>Welcome to <strong>ElecSure</strong>! To complete {verb}, please use the verification codes below:</p>
+    {_table(_row('Email Code', f'<span style="font-size:24px;letter-spacing:4px;color:#f59e0b;font-weight:800">{email_otp}</span>'), _row('Mobile Code', f'<span style="font-size:24px;letter-spacing:4px;color:#fde68a;font-weight:800">{mobile_otp}</span>'))}
+    <p style="font-size:13px;color:#9ca3af;margin-top:20px">These codes will expire in 10 minutes. <strong>Please do not share them with anyone.</strong></p>"""
+    await send_email(to_email, f"Verify Your Account — ElecSure", _template("Verification Required", body))
+    await send_sms(to_phone, f"ElecSure OTP: {mobile_otp} (Valid for 10 mins)")
 
 
-async def notify_verification_link(to_email: str, to_phone: str, verification_url: str, name: str = "User", verify_type: str = "email") -> None:
-    """Send email verification link for account verification."""
-    subject = "Verify Your Email — ElecSure"
-    
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>Thank you for registering with <strong>ElecSure</strong>. Please verify your email address to complete your registration.</p>
-    <p>Click the button below to verify your email:</p>"""
-    
-    # Send email with verification link
-    await send_email(to_email, subject, _template("Verify Your Email", body, verification_url, "Verify Email Address"))
+async def notify_verification_link(to_email: str, to_phone: str, verification_url: str, name: str = "User") -> None:
+    await send_email(to_email, "Verify Your Email", _template("Verify Email", f"Hi {name}, click below to verify your email.", verification_url, "Verify Now"))
+    await send_sms(to_phone, f"Hi {name}, verify your ElecSure account via email.")
 
 
-# ── FEATURE 2: Customer Booking Notifications ────────────────────────
-
-async def notify_booking_created(email: str, name: str, booking_id: str, service_name: str, phone: str, ist_time: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>⚡ <strong>Booking Confirmed!</strong> Your request for <strong>{service_name}</strong> on <strong>{ist_time}</strong> has been received.</p>
-    <p>We're finding the best electrician for you. Sit tight!</p>
-    {_table(_row("Booking ID", f"#{booking_id}"), _row("Service", service_name), _row("Scheduled", ist_time))}
-    <p>Need help? Call us: <strong>{settings.SUPPORT_PHONE}</strong></p>"""
-    await send_email(email, f"Booking #{booking_id} Received — ElecSure", _template("Booking Received!", body))
-
-async def notify_booking_assigned(email: str, name: str, elec_name: str, elec_phone: str, elec_rating: float, booking_id: str, service_name: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>👷 <strong>Great news!</strong> <strong>{elec_name}</strong> has been assigned to your <strong>{service_name}</strong> booking.</p>
-    {_table(_row("Electrician", elec_name), _row("Rating", f"{elec_rating} ★"), _row("Contact", elec_phone))}
-    <p>You can track the progress live on the ElecSure app!</p>"""
-    await send_email(email, f"Electrician Assigned — Booking #{booking_id}", _template("Electrician Assigned!", body))
-
-async def notify_booking_accepted(email: str, name: str, elec_name: str, booking_id: str, date_str: str, address: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>✅ <strong>{elec_name}</strong> has accepted your booking and is getting ready!</p>
-    {_table(_row("Scheduled", date_str), _row("Address", address))}
-    <p>We'll notify you when they're on the way!</p>"""
-    await send_email(email, f"Order Accepted! — Booking #{booking_id}", _template("Electrician Confirmed", body))
-
-async def notify_booking_arrived(email: str, name: str, elec_name: str, booking_id: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>📍 <strong>{elec_name} has arrived!</strong> Your electrician has reached the service location.</p>
-    <p>Please meet them at the door or guide them if needed.</p>"""
-    await send_email(email, f"Electrician Arrived — Booking #{booking_id}", _template("Electrician is Here!", body))
-
-async def notify_booking_started(email: str, name: str, elec_name: str, service_name: str, booking_id: str, phone: str, duration: int = 30) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🔧 <strong>Your service has started!</strong> <strong>{elec_name}</strong> is currently working on your <strong>{service_name}</strong>.</p>
-    <p>Estimated completion: <strong>{duration} mins</strong>. Stay nearby if needed!</p>"""
-    await send_email(email, f"Service Started — Booking #{booking_id}", _template("Work in Progress", body))
-
-async def notify_booking_completed(email: str, name: str, elec_name: str, service_name: str, booking_id: str, amount: float, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🎉 <strong>Service Complete!</strong> <strong>{elec_name}</strong> has finished your <strong>{service_name}</strong>.</p>
-    {_table(_row("Service Amount", f"₹{amount:,.2f}"))}
-    <p>How was the experience? Please take a moment to rate us on ElecSure.</p>
-    <p>Thank you for choosing us ⚡</p>"""
-    await send_email(email, f"Service Complete! — Booking #{booking_id}", _template("Job Completed", body, f"{settings.BASE_URL}/customer", "Rate Experience"))
-
-async def notify_review_given(email: str, name: str, elec_name: str, rating: int, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>💬 <strong>Thanks for your review!</strong> Your feedback helps us maintain quality service.</p>
-    <p>You rated <strong>{elec_name}</strong> <strong>{rating}/5 ★</strong> — much appreciated!</p>"""
-    await send_email(email, "Thank You for Your Feedback — ElecSure", _template("Review Received", body))
+async def notify_booking_created(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "service"])
+    c = booking.customer
+    if not c: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>⚡ <strong>Booking Confirmed!</strong> Your request for <strong>{booking.service.name}</strong> has been received and is being processed.</p>{_table(_row('Booking ID', f'#{booking.id}'), _row('Service', booking.service.name), _row('Pincode', booking.pincode))}"
+    await send_email(c.email, f"Booking #{booking.id} Received — ElecSure", _template("Booking Confirmed!", body))
+    await send_sms(c.phone, f"ElecSure: Booking #{booking.id} received for {booking.service.name}. We are assigning an electrician now!")
 
 
-async def notify_booking_cancelled(email: str, name: str, booking_id: str, reason: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>❌ <strong>Booking Cancelled!</strong> Your booking for <strong>#{booking_id}</strong> has been cancelled.</p>
-    {_table(_row("Reason", reason))}
-    <p>Feel free to book again on ElecSure anytime ⚡</p>"""
-    await send_email(email, f"Booking #{booking_id} Cancelled — ElecSure", _template("Booking Cancelled", body))
+async def notify_booking_assigned(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "service", "electrician"])
+    c, e = booking.customer, booking.electrician
+    if not c or not e: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>👷 <strong>Great news!</strong> <strong>{e.name}</strong> has been assigned to your <strong>{booking.service.name}</strong> booking.</p>{_table(_row('Electrician', e.name), _row('Expertise', e.electrician_profile.primary_skill if e.electrician_profile else 'Electrical'))}"
+    await send_email(c.email, f"Electrician Assigned — Booking #{booking.id}", _template("Electrician Assigned!", body))
+    await send_sms(c.phone, f"ElecSure: Electrician {e.name} is assigned to booking #{booking.id}.")
 
 
-async def notify_booking_cancelled_timeout_apology(email: str, name: str, booking_id: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>😔 <strong>We're extremely sorry!</strong> We couldn't find an available electrician for your booking <strong>#{booking_id}</strong> within the last 30 minutes.</p>
-    <p>To ensure quality service, we've had to cancel this request. We're working hard to increase our team size in your area.</p>
-    <p>Please try booking again in a little while. We appreciate your patience ⚡</p>"""
-    await send_email(email, f"Sincere Apology — Booking #{booking_id}", _template("Booking Cancelled", body))
+async def notify_booking_accepted(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "electrician", "service"])
+    c, e = booking.customer, booking.electrician
+    if not c or not e: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>✅ <strong>Your booking has been accepted!</strong> <strong>{e.name}</strong> is now preparing to visit your location.</p>{_table(_row('Electrician', e.name), _row('Service', booking.service.name), _row('Booking ID', f'#{booking.id}'), _row('Status', 'Accepted'))}<p>You can track the electrician's live location on your dashboard.</p>"
+    await send_email(c.email, f"Booking Accepted — {booking.service.name}", _template("Electrician on the Way!", body, f"{settings.BASE_URL}/customer", "Track Live Location"))
+    await send_sms(c.phone, f"ElecSure: {e.name} accepted your booking #{booking.id}. Track live on the dashboard.")
 
 
-# ── FEATURE 3: Electrician Booking Notifications ─────────────────────
-
-async def notify_elec_new_order(email: str, name: str, booking_id: str, service_name: str, customer_name: str, address: str, date_str: str, accept_url: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🆕 <strong>New Job Alert!</strong> A <strong>{service_name}</strong> booking for <strong>{customer_name}</strong> has been assigned to you.</p>
-    {_table(_row("Date/Time", date_str), _row("Area", address))}
-    <p>Please accept within <strong>10 minutes</strong> to keep your EL Score!</p>"""
-    await send_email(email, f"New Order Assigned — #{booking_id}", _template("New Job Alert!", body, accept_url, "Accept Order"))
-
-async def notify_elec_order_accepted(email: str, name: str, service_name: str, date_str: str, customer_name: str, cust_phone: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>✅ <strong>You've accepted the booking</strong> for <strong>{service_name}</strong> on <strong>{date_str}</strong>.</p>
-    {_table(_row("Customer", customer_name), _row("Contact", cust_phone))}
-    <p>Be on time to earn bonus EL Score points! ⭐</p>"""
-    await send_email(email, "Booking Accepted — ElecSure", _template("Confirmation", body))
-
-async def notify_elec_service_started(email: str, name: str, customer_name: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🔧 <strong>Service marked as Started</strong> for <strong>{customer_name}</strong>.</p>
-    <p>Complete professionally to earn top ratings and EL Score boost!</p>"""
-    await send_email(email, "Job In Progress — ElecSure", _template("Service Started", body))
-
-async def notify_elec_service_completed(email: str, name: str, service_name: str, customer_name: str, amount: float, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🎉 <strong>Job Done!</strong> You've completed <strong>{service_name}</strong> for <strong>{customer_name}</strong>.</p>
-    <p>💰 Earnings: <strong>₹{amount:,.2f}</strong> added to your account.</p>
-    <p>Great work — keep it up! ⚡</p>"""
-    await send_email(email, "Job Completed Successfully — ElecSure", _template("Congratulations!", body))
-
-async def notify_elec_review_received(email: str, name: str, customer_name: str, rating: int, comment: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>⭐ <strong>New Review!</strong> <strong>{customer_name}</strong> rated you <strong>{rating}/5</strong></p>
-    <p style="font-style:italic;color:#6b7280;margin:16px 0;padding-left:12px;border-left:3px solid #f59e0b">"{comment or 'No comment provided'}"</p>
-    <p>Your EL Score has been updated. Check your dashboard!</p>"""
-    await send_email(email, "You've Received a New Review!", _template("Great Work!", body))
+async def notify_booking_arrived(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "electrician", "service"])
+    c, e = booking.customer, booking.electrician
+    if not c or not e: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>📍 <strong>Your electrician has arrived!</strong> <strong>{e.name}</strong> is at your service address now.</p>{_table(_row('Service', booking.service.name), _row('Electrician', e.name), _row('Status', 'At Location'))}<p>Please ensure someone is available to provide access to the area requiring service.</p>"
+    await send_email(c.email, f"Electrician Arrived — Booking #{booking.id}", _template("Arrived at Location", body))
+    await send_sms(c.phone, f"ElecSure: {e.name} has arrived for your job #{booking.id}. Please provide access.")
 
 
-
-# ── FEATURE 4: Customer Promotions ───────────────────────────────────
-
-PROMO_MESSAGES = [
-    "⚡ How's your home's electrical health? Quick check-up services start at just ₹349. Book now on ElecSure!",
-    "☀️ Summer is here! Is your AC running efficiently? Get it serviced before the heat hits hard. Book on ElecSure today!",
-    "🌀 Is your ceiling fan making noise or running slow? Don't ignore it — book a fan repair in 2 minutes on ElecSure!",
-    "💡 Are your LED lights flickering? That could be a wiring issue. Get it checked before it becomes a bigger problem!",
-    "🖥️ Computer flickering or facing power issues? Our electricians handle home power socket and UPS repairs too!",
-    "🔌 Experiencing frequent power trips at home? Our experts can diagnose and fix it same day. Book on ElecSure!",
-    "🍳 Is your mixer or grinder running weak? Electrical motor issues are our speciality. Book a repair today!",
-    "🌧️ Monsoon is coming — is your home's earthing and wiring safe? Get a safety audit on ElecSure before it's too late!",
-    "🏠 Haven't had an electrical check-up in over 6 months? Book a full home inspection",
-    "⭐ Your last service was {days_ago} days ago. Time for a follow-up? Book your next service on ElecSure!",
-    "🌙 Late night electrical issue? Don't panic! ElecSure has electricians available 24/7. Book now and get help fast! ⚡",
-    "🏠 Did you know? 80% of home fires are caused by faulty wiring. Get a FREE safety check with your next booking on ElecSure!",
-    "💡 Tip of the day: If your electricity bill has suddenly increased, you may have a faulty appliance or wiring issue. Let our experts check it! Book now ⚡",
-    "🌧️ Monsoon Safety Alert! Wet season + faulty wiring = danger. Get your home's earthing checked today. Book on ElecSure in just 2 minutes!",
-    "🎉 Special Offer! Book any service this weekend and get priority assignment — your electrician arrives faster! Open ElecSure now ⚡",
-    "🔋 Is your inverter not holding charge like before? Battery and inverter servicing starts at just ₹149 on ElecSure. Book today!",
-    "😴 Trouble sleeping because of fan noise? A wobbly or noisy fan is just one booking away from being fixed. Sleep peacefully tonight! 🌙",
-    "⚡ Power fluctuations damaging your expensive appliances? Get a voltage stabilizer installed by our certified electricians. Book now!",
-    "🍿 Movie night ruined by flickering lights? Don't let electrical issues spoil your fun. Quick fix — book on ElecSure right now!",
-    "🌡️ Summer is peak season for electrical faults. AC tripping, overloaded circuits, fan failures — we handle it all! Book before the rush ☀️",
-    "🔌 How many extension boards are you using at home? Overloaded sockets are a silent fire hazard. Get proper wiring done — book on ElecSure!",
-    "📱 Did you know you can book an electrician in under 60 seconds on ElecSure? Try it now — your home deserves the best care! ⚡",
-    "🏡 Moving into a new home? Get a complete electrical inspection before settling in. Avoid surprises — book ElecSure today!",
-    "💧 Water heater not heating properly? Could be a heating element issue. Our electricians fix it same day! Book on ElecSure ⚡",
-    "🎓 Back to school season! Make sure your child's study room has proper lighting and safe sockets. Book an electrical check today!",
-    "🌟 Your home deserves 5-star electrical care! Our top-rated electricians are just one tap away. Book on ElecSure now ⚡",
-    "🔦 Frequent power cuts in your area? Get an inverter or UPS installed and never sit in the dark again! Book on ElecSure today!",
-    "🍽️ Is your refrigerator or fan running slow? Could be a motor issue. Get it fixed before your next cooking session! Book now ⚡",
-    "⭐ You gave {elec_name} a {rating}/5 rating last time! They're available again this week — want to book them for your next service?",
-    "🚿 Geyser taking too long to heat water? Heating element or thermostat might need replacement. Quick fix — book on ElecSure! ⚡",
-    "💼 Office electrical issues? ElecSure also handles commercial bookings! Server room cooling, office wiring, CCTV installation — we do it all!",
-    "🌈 Festival season is here! Decorative lighting installation, extra socket fitting, outdoor wiring — book ElecSure for a bright celebration! 🎉",
-    "🔧 Small electrical issues ignored today become big expensive problems tomorrow. A quick ₹199 check-up can save you ₹5000 later! Book now ⚡",
-    "👨‍👩‍👧 Family safety first! Old wiring in homes built before 2010 can be dangerous. Schedule a full home wiring inspection on ElecSure today!",
-    "😤 Tired of calling random electricians who show up late or overcharge? ElecSure electricians are verified, rated, and always on time! Book now ⚡",
-]
-
-async def notify_promo(email: str, phone: str, name: str, index: int, extra_data: dict = None) -> None:
-    msg = PROMO_MESSAGES[index]
-    if extra_data:
-        msg = msg.format(**extra_data)
-    
-    body = f"<p>Hi <strong>{name}</strong>,</p><p>{msg}</p>"
-    await send_email(email, "Special Note from ElecSure ⚡", _template("Thinking of You!", body, f"{settings.BASE_URL}/customer", "Open App"))
+async def notify_booking_started(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "electrician", "service"])
+    c, e = booking.customer, booking.electrician
+    if not c or not e: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>🔧 <strong>Service is in progress!</strong> work has officially started on your request.</p>{_table(_row('Service', booking.service.name), _row('Started At', ist_now().strftime('%H:%M %p')), _row('Booking ID', f'#{booking.id}'))}<p>We'll notify you once the job is completed successfully.</p>"
+    await send_email(c.email, f"Service Started — Booking #{booking.id}", _template("Work in Progress", body))
+    await send_sms(c.phone, f"ElecSure: Service started for booking #{booking.id}. Sit back while we fix it!")
 
 
-# ── FEATURE 5: Electrician Engagement ────────────────────────────────
-
-async def notify_elec_score_weekly(email: str, name: str, change_str: str, new_score: float, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>Your weekly performance review is here!</p>
-    {_table(_row("Weekly Change", change_str), _row("Current EL Score", f"<strong>{new_score:.1f} / 100</strong>"))}
-    <p>Keep delivering great service to maintain a high EL Score!</p>"""
-    await send_email(email, "Your Weekly EL Score Report — ElecSure", _template("Weekly Summary", body))
-
-async def notify_elec_slot_reminder(email: str, name: str, count: int, phone: str) -> None:
-    body = f"<p>Hi <strong>{name}</strong>,</p><p>📅 You have {count} slots booked this week. 💡 Pro tip: Peak hour slots (6–9 PM) earn 30% more!</p>"
-    await send_email(email, "Slot Reminder — ElecSure", _template("Check Your Bookings", body))
-
-async def notify_elec_midnight_bonus(email: str, name: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>🌙 <strong>Midnight Bonus Alert!</strong> Book a slot between 11 PM–2 AM and earn <strong>₹50 extra</strong> per job.</p>
-    <p>Limited slots available — grab yours now and maximize your earnings! ⚡</p>"""
-    await send_email(email, "Midnight Bonus Opportunity — ElecSure", _template("Earn Extra Tonight!", body, f"{settings.BASE_URL}/electrician", "View Available Slots"))
-
-async def notify_elec_availability_reminder(email: str, name: str, hours: float, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>👋 You've been offline for <strong>{hours:.1f} hours</strong> during peak demand time!</p>
-    <p>Customers are looking for help and opportunities are waiting. Switch on your availability to start receiving orders! ⚡</p>"""
-    await send_email(email, "Come Back Online — Missed Opportunities", _template("Peak Demand Right Now!", body, f"{settings.BASE_URL}/electrician", "Go Online Now"))
-
-async def notify_elec_order_timeout_warning(email: str, name: str, service_name: str, booking_id: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>⏰ <strong>Action Required!</strong> You have a pending booking for <strong>{service_name}</strong> (Booking ID: <strong>#{booking_id}</strong>) that needs your response.</p>
-    <p>Please accept within <strong>2 minutes</strong> or it will be reassigned! ⚡</p>"""
-    await send_email(email, "Urgent: Accept Your Order Now — ElecSure", _template("Pending Booking", body, f"{settings.BASE_URL}/electrician", "Accept Now"))
+async def notify_booking_completed(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "service", "electrician"])
+    c = booking.customer
+    if not c: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>🎉 <strong>Service Complete!</strong> <strong>{booking.electrician.name if booking.electrician else 'Your electrician'}</strong> has finished your <strong>{booking.service.name}</strong>.</p>{_table(_row('Service Amount', f'₹{booking.total_amount:.2f}'), _row('Status', 'Success'))}<p>How was the experience? Please take a moment to rate us on ElecSure.</p>"
+    await send_email(c.email, f"Service Complete! — Booking #{booking.id}", _template("Job Completed", body, f"{settings.BASE_URL}/customer", "Rate Experience"))
+    await send_sms(c.phone, f"ElecSure: Booking #{booking.id} completed! Rate us on the dashboard.")
 
 
-async def notify_elec_order_timeout_penalty(email: str, name: str, booking_id: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>⚠️ <strong>Important Warning!</strong> You failed to accept booking <strong>#{booking_id}</strong> despite multiple reminders.</p>
-    <p>As a result, <strong>10 points</strong> have been deducted from your EL Score. Repeatedly ignoring assigned orders will lead to account suspension.</p>
-    <p>Please stay active when your status is set to 'Available' ⚡</p>"""
-    await send_email(email, "EL Score Deducted — Action Required", _template("Warning: Order Not Accepted", body))
+async def notify_booking_cancelled(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["customer", "service"])
+    c = booking.customer
+    if not c: return
+    body = f"<p>Hi <strong>{c.name}</strong>,</p><p>❌ <strong>Booking Cancelled.</strong> Your booking for <strong>{booking.service.name}</strong> has been cancelled.</p>{_table(_row('Booking ID', f'#{booking.id}'), _row('Reason', booking.cancellation_reason or 'Internal Adjustment'))}<p>We apologize for any inconvenience caused. If you have questions, please contact our support team.</p>"
+    await send_email(c.email, f"Booking Cancelled — #{booking.id}", _template("Cancelled", body))
+    await send_sms(c.phone, f"ElecSure: Booking #{booking.id} cancelled. Reason: {booking.cancellation_reason or 'Internal System'}")
 
-async def notify_elec_low_score_warning(email: str, name: str, score: float, phone: str) -> None:
-    body = f"<p>Hi <strong>{name}</strong>,</p><p>🚨 <strong>Alert!</strong> Your EL Score has dropped below <strong>40</strong>.</p><p>You're at risk of being deprioritized in job matching. Tips: Accept jobs faster, be on time, collect good reviews! 💪</p>"
-    await send_email(email, "Urgent: Low EL Score Alert", _template("Action Required", body))
 
-async def notify_elec_weekly_summary(email: str, name: str, data: dict, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>📈 <strong>Your Weekly ElecSure Report:</strong></p>
-    {_table(
-        _row("Jobs Completed", data['count']),
-        _row("Earnings", f"₹{data['amount']:,.2f}"),
-        _row("Avg Rating", f"{data['rating']:.1f} ★"),
-        _row("EL Score", data['score'])
-    )}
-    <p>Keep up the great work! Book more slots to earn more this week ⚡</p>"""
-    await send_email(email, "Weekly Performance Summary", _template("Great Week!", body))
+async def notify_elec_new_order(db: "AsyncSession", booking: "Booking") -> None:
+    await db.refresh(booking, ["electrician", "service", "customer"])
+    e = booking.electrician
+    if not e: return
+    body = f"<p>Hi <strong>{e.name}</strong>,</p><p>🚀 <strong>New Job Assigned!</strong> A customer is waiting for your expertise.</p>{_table(_row('Service', booking.service.name), _row('Pincode', booking.pincode), _row('Customer', booking.customer.name if booking.customer else 'ElecSure User'), _row('Address', booking.address))}<p>Accept the job quickly to maintain your EL Score!</p>"
+    await send_email(e.email, f"⚡ New Job: {booking.service.name}", _template("New Assignment", body, f"{settings.BASE_URL}/electrician", "View Details & Accept"))
+    await send_sms(e.phone, f"ElecSure: New job #{booking.id} ({booking.service.name}). Accept it now on your dashboard!")
 
-async def notify_elec_verified(email: str, name: str, phone: str) -> None:
-    body = f"""<p>Hi <strong>{name}</strong>,</p>
-    <p>Your account is verified, you can now start managing slots and receiving orders.</p>
-    <p>Welcome to the ElecSure team! ⚡</p>"""
-    await send_email(email, "Account Verified — ElecSure", _template("Verification Successful!", body, f"{settings.BASE_URL}/electrician", "Go to Dashboard"))
+
+async def notify_elec_order_accepted(db: "AsyncSession", booking_id: str) -> None:
+    from app.models import Booking
+    r = await db.execute(select(Booking).where(Booking.id == booking_id).options(joinedload(Booking.electrician)))
+    b = r.scalar_one_or_none()
+    if b and b.electrician:
+        await send_email(b.electrician.email, "Accepted", _template("Accepted", "You accepted the job."))
+
+
+async def notify_elec_service_started(db: "AsyncSession", booking_id: str) -> None:
+    from app.models import Booking
+    r = await db.execute(select(Booking).where(Booking.id == booking_id).options(joinedload(Booking.electrician)))
+    b = r.scalar_one_or_none()
+    if b and b.electrician:
+        await send_email(b.electrician.email, "Started", _template("Started", "Job started."))
+
+
+async def notify_elec_service_completed(db: "AsyncSession", booking_id: str) -> None:
+    from app.models import Booking
+    r = await db.execute(select(Booking).where(Booking.id == booking_id).options(joinedload(Booking.electrician)))
+    b = r.scalar_one_or_none()
+    if b and b.electrician:
+        await send_email(b.electrician.email, "Completed", _template("Done", "Earnings added!"))
+
+
+async def notify_review_given(db: "AsyncSession", review: "Review") -> None:
+    await db.refresh(review, ["customer"])
+    if review.customer:
+        await send_email(review.customer.email, "Review Received", _template("Thanks", "Thanks for the feedback!"))
+
+
+async def notify_elec_review_received(db: "AsyncSession", review: "Review") -> None:
+    await db.refresh(review, ["booking", "customer"])
+    await db.refresh(review.booking, ["electrician", "service"])
+    e = review.booking.electrician
+    if not e: return
+    body = f"<p>Hi <strong>{e.name}</strong>,</p><p>🌟 <strong>A customer left you a review!</strong></p>{_table(_row('Rating', '★' * review.rating), _row('Service', review.booking.service.name))}<p style='font-style:italic;color:#9ca3af;padding:12px;background:#1f2937;border-radius:8px'>\"{review.comment or 'No comment provided'}\"</p><p>Great feedback improves your EL Score and helps you get more orders!</p>"
+    await send_email(e.email, f"New {review.rating}-Star Review Received", _template("New Feedback Received", body, f"{settings.BASE_URL}/electrician", "Acknowledge Review"))
+
+
+async def notify_elec_score_weekly(email: str, name: str, change_str: str, new_score: float, phone: str = "") -> None:
+    await send_email(email, "Weekly Score", _template("Score", f"New score: {new_score}"))
+
+
+async def notify_elec_slot_reminder(email: str, name: str, count: int, phone: str = "") -> None:
+    await send_email(email, "Slot Reminder", _template("Reminder", f"You have {count} slots."))
+
+
+async def notify_elec_midnight_bonus(email: str, name: str, phone: str = "") -> None:
+    await send_email(email, "Midnight Bonus", _template("Bonus", "Earn extra tonight!"))
+
+
+async def notify_elec_availability_reminder(email: str, name: str, hours: float, phone: str = "") -> None:
+    await send_email(email, "Availability", _template("Offline", "You've been offline."))
+
+
+async def notify_elec_order_timeout_warning(email: str, name: str, service_name: str, booking_id: str, phone: str = "") -> None:
+    await send_email(email, "Timeout Warning", _template("Urgent", "Accept booking now."))
+
+
+async def notify_elec_low_score_warning(email: str, name: str, score: float, phone: str = "") -> None:
+    await send_email(email, "Low Score Alert", _template("Warning", f"Score below 40: {score}"))
+
+
+async def notify_elec_weekly_summary(email: str, name: str, data: dict, phone: str = "") -> None:
+    await send_email(email, "Weekly Summary", _template("Report", "Weekly stats are ready."))
+
+
+async def notify_elec_verified(email: str, name: str, phone: str = "") -> None:
+    await send_email(email, "Verified", _template("Welcome", "You are verified!"))
 
 
 async def notify_elec_motivation(email: str, name: str, msg: str) -> None:
-    """Send custom motivational or engagement messages to electricians via email."""
-    body = f"<p>Hi <strong>{name}</strong>,</p><p>{msg}</p>"
-    await send_email(email, "Message from ElecSure Team ⚡", _template("Team Message", body))
+    await send_email(email, "Motivation", _template("Team Message", msg))
+
+
+async def notify_elec_restricted(email: str, name: str, balance: float) -> None:
+    body = f"""<p>Hi <strong>{name}</strong>,</p>
+    <p>⛔ <strong>Your account has been restricted.</strong></p>
+    <p>Your pending commission balance has exceeded the ₹3,000 threshold. To maintain platform stability, your account is now in **Restricted Mode**.</p>
+    {_table(_row('Pending Balance', f'₹{balance:,.2f}'), _row('Status', '<span style="color:#ef4444;font-weight:700">RESTRICTED</span>'), _row('Action', 'Payment Required'))}
+    <p><strong>Note:</strong> You will not receive any new job assignments until this balance is cleared. Once you pay the commission, your account will be automatically restored.</p>"""
+    await send_email(email, "⚠️ Account Restricted — Clear Balance to Resume", _template("Account Restricted", body, f"{settings.BASE_URL}/electrician", "Pay Commission Now"))
+
+
+async def notify_elec_unrestricted(email: str, name: str) -> None:
+    body = f"""<p>Hi <strong>{name}</strong>,</p>
+    <p>✅ <strong>Account Restored!</strong></p>
+    <p>Thank you for clearing your pending commission. Your account is now back in **Good Standing** and you are eligible to receive new assignments immediately.</p>
+    {_table(_row('Status', '<span style="color:#10b981;font-weight:700">ACTIVE</span>'), _row('Availability', 'Restored to Online'))}
+    <p>Go to your dashboard to ensure your time slots are updated!</p>"""
+    await send_email(email, "✅ Access Restored — Welcome Back!", _template("Welcome Back Online", body, f"{settings.BASE_URL}/electrician", "Go to Dashboard"))
+
+
+async def notify_elec_commission_cleared(email: str, name: str, amount: float, remaining: float) -> None:
+    body = f"""<p>Hi <strong>{name}</strong>,</p>
+    <p>💰 <strong>Payment Received!</strong></p>
+    <p>We have successfully recorded your commission payment of ₹{amount:,.2f}.</p>
+    {_table(_row('Amount Paid', f'₹{amount:,.2f}'), _row('Remaining Balance', f'₹{remaining:,.2f}'))}
+    <p>Thank you for your timely payment. It helps us keep the ElecSure ecosystem growing!</p>"""
+    await send_email(email, "💰 Commission Payment Received", _template("Payment Confirmed", body))
+
+
+async def notify_promo(email: str, phone: str, name: str, index: int) -> None:
+    msg = PROMO_MESSAGES[index % len(PROMO_MESSAGES)]
+    await send_email(email, "Special Offer", _template("Promo", msg))
+
+
+PROMO_MESSAGES = [
+    "⚡ Is your home power-bill ready? Book an Energy Audit slot today and save 15% on electricity!",
+    "🌈 Festival season is here! Decorative lighting installation — book now! 🎉",
+    "🔧 Small issues today become big problems tomorrow. A ₹199 check-up saves ₹5000 later! ⚡",
+]
