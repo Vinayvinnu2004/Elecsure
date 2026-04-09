@@ -79,7 +79,7 @@
         verified. we will notify you when verified.
       </div>
 
-      <!-- Commission Alert Banner -->
+      <!-- Commission Warning Banner (₹2,000+) -->
       <div id="commissionBanner" class="alert hidden"
         style="margin-bottom: 24px; background: rgba(255, 248, 230, 0.9); border: 1.5px solid #f59e0b; color: #92400e; border-radius: var(--radius-sm); padding: 16px; font-weight: 500;">
         <div style="font-weight: 800; margin-bottom: 4px; display:flex; align-items:center; gap:8px; font-size:15px">
@@ -87,6 +87,20 @@
         </div>
         <div>You will be restricted from receiving new bookings at ₹3,000.</div>
         <div style="margin-top:4px">Please pay now to continue working without interruption.</div>
+        <button onclick="openSection('commissionPaymentSection')" style="margin-top:8px; padding:6px 12px; background:#f59e0b; color:white; border:none; border-radius:4px; font-size:13px; font-weight:700; cursor:pointer">Pay Commission Now</button>
+      </div>
+
+      <!-- Account Restricted Banner (₹3,000+) -->
+      <div id="restrictionBanner" class="alert hidden"
+        style="margin-bottom: 24px; background: rgba(239, 68, 68, 0.1); border: 2px solid #ef4444; color: #b91c1c; border-radius: var(--radius-sm); padding: 16px; font-weight: 600;">
+        <div style="font-weight: 900; margin-bottom: 6px; display:flex; align-items:center; gap:8px; font-size:16px">
+          ⛔ Account Restricted: Commission balance exceeds ₹3,000
+        </div>
+        <div style="font-size:14px">Your access to new bookings has been blocked until this balance is cleared.</div>
+        <div style="margin-top:8px; display:flex; gap:12px; align-items:center">
+          <button onclick="openSection('commissionPaymentSection')" style="padding:6px 12px; background:#ef4444; color:white; border:none; border-radius:4px; font-size:13px; font-weight:700; cursor:pointer">Pay Commission Now</button>
+          <span style="font-size:12px; opacity:0.8">Contact support if you have already paid.</span>
+        </div>
       </div>
 
       <div id="activeOrdersList" class="cards-grid">
@@ -634,15 +648,36 @@
           document.getElementById('availToggle').disabled = true;
         }
 
-        // Commission Logic
+        // Commission & Restriction Logic
         const commBanner = document.getElementById('commissionBanner');
-        if (commBanner) {
-          if (earn.commission_due >= 2000) {
-            commBanner.classList.remove('hidden');
-            document.getElementById('commAmount').textContent = Math.floor(earn.commission_due / 100) * 100;
-          } else {
-            commBanner.classList.add('hidden');
+        const restBanner = document.getElementById('restrictionBanner');
+        const availToggle = document.getElementById('availToggle');
+        const due = parseFloat(earn.commission_due || 0);
+
+        // Update settings & payment commission balance
+        const sComm = document.getElementById('settCommissionDue');
+        if (sComm) sComm.textContent = due.toFixed(2);
+        const pComm = document.getElementById('paymentDueAmount');
+        if (pComm) pComm.textContent = due.toFixed(2);
+
+        if (due >= 3000) {
+          if (restBanner) restBanner.classList.remove('hidden');
+          if (commBanner) commBanner.classList.add('hidden');
+          // When restricted, force visually OFF
+          if (availToggle) {
+             availToggle.checked = false;
+             document.getElementById('availLabel').textContent = 'Unavailable';
+             document.getElementById('availLabel').style.color = 'var(--red)';
           }
+        } else if (due >= 2000) {
+          if (commBanner) {
+            commBanner.classList.remove('hidden');
+            document.getElementById('commAmount').textContent = Math.floor(due);
+          }
+          if (restBanner) restBanner.classList.add('hidden');
+        } else {
+          if (commBanner) commBanner.classList.add('hidden');
+          if (restBanner) restBanner.classList.add('hidden');
         }
 
         // Update Password UX based on has_password
@@ -733,6 +768,14 @@
     }
 
     async function toggleAvailability() {
+      const p = window._electricianProfile;
+      const earn = p?.earnings || {};
+      if (earn.commission_due >= 3000) {
+        showToast('Please clear the commission due to start receiving new orders', 'error');
+        document.getElementById('availToggle').checked = false;
+        return;
+      }
+
       try {
         const res = await apiPost('/api/v1/users/me/availability', {});
         await loadProfile();

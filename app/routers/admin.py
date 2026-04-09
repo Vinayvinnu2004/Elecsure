@@ -1,6 +1,7 @@
 """app/routers/admin.py — Admin dashboard: users, bookings, services, EL score, stats."""
 
 import logging
+import asyncio
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,10 +167,52 @@ async def toggle_electrician_restriction(
         raise HTTPException(status_code=404, detail="Electrician profile not found")
         
     profile.is_restricted = not profile.is_restricted
+    
+    # Link availability to restriction status
+    if profile.is_restricted:
+        profile.is_available = False
+    else:
+        profile.is_available = True
+        # Clear commission due when unrestricting
+        from app.models.earnings import ElectricianEarning
+        e_r = await db.execute(select(ElectricianEarning).where(ElectricianEarning.electrician_id == user_id))
+        earn = e_r.scalar_one_or_none()
+        if earn:
+            earn.commission_due = 0.0
+            
+            # Record this clearance in commission history
+            try:
+                from app.models.earnings import WeeklyReport
+                now = ist_now()
+                clearance_report = WeeklyReport(
+                    electrician_id=user_id,
+                    total_earned=0.0,
+                    commission_due=0.0,
+                    week_start=now,
+                    week_end=now
+                )
+                db.add(clearance_report)
+            except Exception as e:
+                logger.error(f"Failed to record manual clearance in history: {e}")
+    
     await db.commit()
+
+    # Trigger Notifications
+    r_user = await db.execute(select(User).where(User.id == user_id))
+    u = r_user.scalar_one_or_none()
+    if u:
+        from app.services import notification_service
+        if profile.is_restricted:
+            from app.models import ElectricianEarning
+            e_r = await db.execute(select(ElectricianEarning).where(ElectricianEarning.electrician_id == user_id))
+            earn = e_r.scalar_one_or_none()
+            balance = float(earn.commission_due if earn else 0.0)
+            asyncio.create_task(notification_service.notify_elec_restricted(u.email, u.name, balance))
+        else:
+            asyncio.create_task(notification_service.notify_elec_unrestricted(u.email, u.name))
     
     status_str = "Restricted Mode ENABLED" if profile.is_restricted else "Restricted Mode DISABLED"
-    return MessageOut(message=f"Electrician restriction toggled: {status_str}. Order flow updated.")
+    return MessageOut(message=f"Electrician restriction toggled: {status_str}. Availability automatically updated.")
 
 
 @router.post("/users/{user_id}/verify", response_model=MessageOut)

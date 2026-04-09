@@ -25,12 +25,9 @@ from app.models import (
 from app.services.el_score_service import apply_el_event
 from app.services.matching_service import reassign_booking, fallback_assign, assign_all_pending
 from app.services.notification_service import (
-    notify_promo, PROMO_MESSAGES,
-    # note: some names were slightly different in my previous attempt
+    notify_promo, 
     notify_elec_slot_reminder, notify_elec_new_order, notify_booking_cancelled, 
     notify_elec_order_timeout_warning,
-    notify_booking_cancelled_timeout_apology,
-    notify_elec_order_timeout_penalty,
     notify_elec_weekly_summary,
     notify_elec_availability_reminder
 )
@@ -73,11 +70,7 @@ async def send_daily_promotions():
                     valid_indices = list(range(len(PROMO_MESSAGES)))
                 
                 idx = random.choice(valid_indices)
-                extra_data = {}
-                if "{days_ago}" in PROMO_MESSAGES[idx]:
-                    extra_data["days_ago"] = (ist_now() - lb.created_at).days if lb else 30
-                
-                await notify_promo(cust.email, cust.phone, cust.name, idx, extra_data)
+                await notify_promo(cust.email, cust.phone, cust.name, idx)
             
             await db.commit()
             logger.info("Daily promotions sent.")
@@ -141,10 +134,10 @@ async def fallback_check():
                     
                     if booking.electrician:
                         await apply_el_event(db, str(booking.electrician_id), ELScoreEvent.BOOKING_SKIPPED, booking_id=str(booking.id), notes="Timeout")
-                        asyncio.create_task(notify_elec_order_timeout_penalty(booking.electrician.email, booking.electrician.name, str(booking.id), booking.electrician.phone))
+                        # notify_elec_order_timeout_warning is already sufficient for notification
                     
                     if booking.customer:
-                        asyncio.create_task(notify_booking_cancelled_timeout_apology(booking.customer.email, booking.customer.name, str(booking.id), booking.customer.phone))
+                        asyncio.create_task(notify_booking_cancelled(db, booking))
                     continue
 
                 if await reassign_booking(db, booking):
@@ -156,12 +149,7 @@ async def fallback_check():
                         await db.flush()
                         accept_url = f"{settings.BASE_URL}/api/v1/bookings/action/{token_str}"
                         ist_time = (booking.time_slot_start or booking.preferred_date).strftime("%d %b %Y %I:%M %p")
-                        asyncio.create_task(notify_elec_new_order(
-                            new_elec.email, new_elec.name, str(booking.id), 
-                            booking.service.name if booking.service else "Service",
-                            booking.customer.name if booking.customer else "Customer",
-                            booking.address, ist_time, accept_url, new_elec.phone,
-                        ))
+                        asyncio.create_task(notify_elec_new_order(db, booking))
 
             # 3. Handle REQUESTED bookings whose time has passed
             r_req = await db.execute(select(Booking).options(joinedload(Booking.customer)).where(
@@ -175,7 +163,7 @@ async def fallback_check():
                 b.cancellation_reason = "No electrician found in time."
                 b.cancelled_at = now
                 if b.customer:
-                    asyncio.create_task(notify_booking_cancelled(b.customer.email, b.customer.name, str(b.id), b.cancellation_reason, b.customer.phone))
+                    asyncio.create_task(notify_booking_cancelled(db, b))
 
             # 4. Periodically try matching pending
             await assign_all_pending(db)

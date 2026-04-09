@@ -172,7 +172,13 @@ async def clear_commission_due(db: AsyncSession, electrician_id: str, amount: fl
         if p := r_prof.scalar_one_or_none():
             if p.is_restricted:
                 p.is_restricted = False
-                logger.info(f"Electrician {electrician_id} balance cleared under threshold. Restricted Mode removed.")
+                # Automatically turn ON availability when restriction is lifted
+                p.is_available = True
+                
+                if u:
+                    _bg_task(notification_service.notify_elec_unrestricted(u.email, u.name))
+                
+                logger.info(f"Electrician {electrician_id} balance cleared. Restricted Mode removed and availability restored.")
     
     await db.commit()
     return True
