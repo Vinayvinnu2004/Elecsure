@@ -160,15 +160,56 @@ async def _get_candidates(
     return group_a, group_b
 
 
-def _pick_best(group_a: list[User], group_b: list[User]) -> Optional[User]:
+async def _get_priority_role(db: AsyncSession) -> str:
     """
-    Fair exposure: pick top 2 from Group A + top 1 from Group B,
-    then return the one with the highest EL score.
+    Checks the most recent booking that had an assignment attempt
+    and toggles the role for the current booking.
     """
-    candidates = group_a[:2] + group_b[:1]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda e: e.electrician_profile.el_score or 0)
+    try:
+        # Find the last booking that was successfully assigned (had an electrician_id)
+        r = await db.execute(
+            select(Booking).where(Booking.electrician_id != None)
+            .order_by(Booking.created_at.desc(), Booking.id.desc()).limit(1)
+        )
+        last_booking = r.scalar_one_or_none()
+        
+        if not last_booking:
+            return "pro"  # Default start
+
+        # Check if the electrician assigned to that booking was a pro or probationer
+        # We check the role of the electrician who was given the FIRST chance 
+        # (This is more robust than just checking the final winner)
+        elec_r = await db.execute(select(User).where(User.id == last_booking.electrician_id))
+        elec = elec_r.scalar_one_or_none()
+        if not elec: return "pro"
+        
+        completed = await _count_completed(db, str(elec.id))
+        last_role = "pro" if completed >= PROBATION_JOBS else "probation"
+        
+        # Toggle
+        return "probation" if last_role == "pro" else "pro"
+    except Exception as e:
+        logger.error(f"Error determining priority role: {e}")
+        return "pro"
+
+
+def _get_ordered_pool(group_a: list[User], group_b: list[User], priority_role: str) -> list[User]:
+    """
+    Arranges top 1 Pro and top 2 Probationers into an ordered list based on priority_role.
+    """
+    best_pro = group_a[:1]
+    best_probationers = group_b[:2]
+    
+    if priority_role == "pro":
+        # Pro gets first chance, then probationers
+        return best_pro + best_probationers
+    else:
+        # Probationer gets first chance, then pro, then remaining probationer
+        if len(best_probationers) > 0:
+            first_prob = [best_probationers[0]]
+            second_prob = best_probationers[1:]
+            return first_prob + best_pro + second_prob
+        return best_pro
 
 
 def _mask(phone: str) -> str:
@@ -192,6 +233,7 @@ async def assign_booking(db: AsyncSession, booking: Booking) -> bool:
     if not booking.service:
         await db.refresh(booking, ["service"])
 
+    # 1. Get raw candidates sorted by EL score
     group_a, group_b = await _get_candidates(
         db,
         service_name=booking.service.name,
@@ -199,10 +241,18 @@ async def assign_booking(db: AsyncSession, booking: Booking) -> bool:
         slot_start=booking.time_slot_start,
         slot_end=booking.time_slot_end,
     )
-    best = _pick_best(group_a, group_b)
-    if not best:
+    
+    # 2. Determine whose turn it is
+    priority = await _get_priority_role(db)
+    
+    # 3. Create ordered pool
+    pool = _get_ordered_pool(group_a, group_b, priority)
+    
+    if not pool:
         return False
-    return await _do_assign(db, booking, best)
+        
+    # Pick the first one (Priority #1)
+    return await _do_assign(db, booking, pool[0])
 
 
 async def reassign_booking(db: AsyncSession, booking: Booking) -> bool:
@@ -210,6 +260,7 @@ async def reassign_booking(db: AsyncSession, booking: Booking) -> bool:
     if not booking.service:
         await db.refresh(booking, ["service"])
 
+    # Filter candidates excluding previous attempt
     group_a, group_b = await _get_candidates(
         db,
         service_name=booking.service.name,
@@ -218,9 +269,23 @@ async def reassign_booking(db: AsyncSession, booking: Booking) -> bool:
         slot_end=booking.time_slot_end,
         exclude_ids=[str(prev_id)] if prev_id else [],
     )
-    best = _pick_best(group_a, group_b)
+    
+    # Determine the priority that was used for this booking initially
+    # or just toggle from the previous attempt's role.
+    elec_r = await db.execute(select(User).where(User.id == prev_id))
+    prev_elec = elec_r.scalar_one_or_none()
+    
+    priority = "pro"
+    if prev_elec:
+        comp = await _count_completed(db, str(prev_elec.id))
+        prev_role = "pro" if comp >= PROBATION_JOBS else "probation"
+        priority = "probation" if prev_role == "pro" else "pro"
+    else:
+        priority = await _get_priority_role(db)
 
-    if best:
+    pool = _get_ordered_pool(group_a, group_b, priority)
+    
+    if pool:
         from app.services.el_score_service import apply_el_event
         from app.models import ELScoreEvent
         if prev_id:
@@ -229,7 +294,7 @@ async def reassign_booking(db: AsyncSession, booking: Booking) -> bool:
                 booking_id=str(booking.id),
                 notes="Did not accept within 10 minutes",
             )
-        return await _do_assign(db, booking, best)
+        return await _do_assign(db, booking, pool[0])
     return False
 
 
@@ -246,10 +311,12 @@ async def fallback_assign(db: AsyncSession, booking: Booking) -> tuple[bool, str
     # --- STEP 1: Try remaining time in current slot (excluding previous electrician) ---
     if booking.time_slot_end and booking.time_slot_end > now:
         ga, gb = await _get_candidates(db, svc, pin, now, booking.time_slot_end, exclude_ids=[str(prev_elec_id)] if prev_elec_id else [])
-        best = _pick_best(ga, gb)
+        priority = await _get_priority_role(db)
+        pool = _get_ordered_pool(ga, gb, priority)
+        best = pool[0] if pool else None
         if best:
             await _do_assign(db, booking, best)
-            return True, f"Reassigned to better candidate {best.name} within original slot"
+            return True, f"Reassigned to prioritized candidate {best.name} within original slot"
 
     # --- STEP 2: Handle Next Slot OR Cancellation ---
     
