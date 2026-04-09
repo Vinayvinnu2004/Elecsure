@@ -12,6 +12,10 @@ from app.core.security import ist_now
 
 logger = logging.getLogger(__name__)
 
+def _bg_task(coro):
+    import asyncio
+    asyncio.create_task(coro)
+
 async def calculate_booking_earning(db: AsyncSession, booking_id: str):
     """
     Calculate and update earnings for a completed booking.
@@ -20,7 +24,12 @@ async def calculate_booking_earning(db: AsyncSession, booking_id: str):
     # 1. Load booking with electrician and profile
     from sqlalchemy.orm import joinedload
     r = await db.execute(
-        select(Booking).options(joinedload(Booking.electrician).joinedload(User.earnings))
+        select(Booking).options(
+            joinedload(Booking.electrician).options(
+                joinedload(User.earnings),
+                joinedload(User.electrician_profile)
+            )
+        )
         .where(Booking.id == booking_id)
     )
     booking = r.scalar_one_or_none()
@@ -69,9 +78,20 @@ async def calculate_booking_earning(db: AsyncSession, booking_id: str):
 
     # 4. Restriction Check
     if earnings.commission_due > 3000:
-        logger.info(f"Electrician {booking.electrician_id} reached commission limit ({earnings.commission_due}). Restricted mode automatically enabled. They will stop receiving new orders.")
+        logger.info(f"Electrician {booking.electrician_id} reached commission limit ({earnings.commission_due}). Restricted mode automatically enabled.")
         if booking.electrician.electrician_profile:
+            if not booking.electrician.electrician_profile.is_restricted:
+                # Trigger email if state is changing to restricted
+                from app.services import notification_service
+                _bg_task(notification_service.notify_elec_restricted(
+                    booking.electrician.email, 
+                    booking.electrician.name, 
+                    float(earnings.commission_due)
+                ))
+            
             booking.electrician.electrician_profile.is_restricted = True
+            # Automatically turn off availability when restricted
+            booking.electrician.electrician_profile.is_available = False
     
     # 5. Mark booking as calculated
     booking.earning_calculated = True
