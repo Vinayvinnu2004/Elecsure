@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     BASE_URL: str = "http://localhost:8000"
     TIMEZONE: str = "Asia/Kolkata"  # IST
     ALLOWED_HOSTS: list[str] = ["*"]
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
 
     # Security
     SECRET_KEY: str
