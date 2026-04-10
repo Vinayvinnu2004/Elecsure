@@ -141,18 +141,31 @@ async def electrician_analytics(
     rejected      = status_counts.get(STATUS_CANCELLED, 0)
     active        = status_counts.get(STATUS_STARTED, 0)
 
-    # Weekly and monthly earnings
-    weekly_earnings = sum(
-        float(b.total_amount or 0.0) for b in all_bookings
-        if (b.is_paid or b.status in (STATUS_COMPLETED, STATUS_REVIEWED)) and b.created_at
-        and (now - b.created_at).days <= 7
-    )
-    monthly_earnings = sum(
-        float(b.total_amount or 0.0) for b in all_bookings
-        if (b.is_paid or b.status in (STATUS_COMPLETED, STATUS_REVIEWED)) and b.created_at
-        and b.created_at.month == now.month
-        and b.created_at.year == now.year
-    )
+    # Dynamic Earnings Calculation (Robust against scheduler misses)
+    daily_earnings = 0.0
+    weekly_earnings = 0.0
+    monthly_earnings = 0.0
+
+    for b in all_bookings:
+        if b.status in (STATUS_COMPLETED, STATUS_REVIEWED):
+            val = float(b.total_amount or 0.0)
+            
+            # Re-apply midnight bonus logic for accurate analytics display
+            if b.time_slot_start and 0 <= b.time_slot_start.hour < 6:
+                val += 50.0
+
+            if b.completed_at:
+                # 1. Daily (IST Today)
+                if b.completed_at.date() == now.date():
+                    daily_earnings += val
+                
+                # 2. Weekly (Last 7 days)
+                if (now - b.completed_at).days < 7:
+                    weekly_earnings += val
+                
+                # 3. Monthly (Current Calendar Month)
+                if b.completed_at.month == now.month and b.completed_at.year == now.year:
+                    monthly_earnings += val
 
     avg_job_value      = round(total_earnings / completed, 2) if completed > 0 else 0.0
     avg_completion_min = round(sum(completion_times) / len(completion_times), 1) if completion_times else 0.0
@@ -184,8 +197,8 @@ async def electrician_analytics(
             "active": active,
         },
         "earnings": {
-            "daily_earning": round(earnings.daily_earning or 0.0, 2) if earnings else 0.0,
-            "weekly_earning": round(earnings.weekly_earning or 0.0, 2) if earnings else 0.0,
+            "daily_earning": round(daily_earnings, 2),
+            "weekly_earning": round(weekly_earnings, 2),
             "total_lifetime_earning": round(earnings.total_lifetime_earning or 0.0, 2) if earnings else 0.0,
             "commission_due": round(earnings.commission_due or 0.0, 2) if earnings else 0.0,
             "avg_job_value": avg_job_value,
