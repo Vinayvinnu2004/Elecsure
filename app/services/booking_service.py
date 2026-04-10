@@ -18,7 +18,7 @@ from app.models import (
     STATUS_ARRIVED, STATUS_STARTED, STATUS_COMPLETED, STATUS_REVIEWED, STATUS_CANCELLED,
     CANCEL_MANUAL, CANCEL_SYSTEM, CANCEL_ELECTRICIAN,
     TimeSlot, SLOT_AVAILABLE, SLOT_BOOKED, SLOT_COMPLETED, SLOT_FAILED, SLOT_CANCELLED,
-    Service, Review, ActionToken, ELScoreEvent, BookingHistory,
+    Service, Review, ActionToken, ELScoreEvent, BookingHistory, ElectricianProfile,
 )
 from app.schemas.booking import BookingCreate, ReviewCreate
 from app.services.matching_service import assign_booking
@@ -210,6 +210,22 @@ class BookingService:
         await record_history(db, b.id, STATUS_REVIEWED, notes=f"Review given: {data.rating} stars", changed_by=user.id)
 
         if b.electrician_id:
+            # ── Update rating aggregate BEFORE EL recalculation ──────────────
+            # calculate_el_score() reads profile.rating + profile.total_reviews.
+            # If we don't update them now the recalculation uses stale pre-review
+            # values and produces a negative "Recalculation Adjustment" that
+            # cancels out the review bonus.
+            r_prof = await db.execute(
+                select(ElectricianProfile).where(ElectricianProfile.user_id == b.electrician_id)
+            )
+            prof = r_prof.scalar_one_or_none()
+            if prof:
+                old_total  = prof.total_reviews or 0
+                old_rating = float(prof.rating or 0.0)
+                new_total  = old_total + 1
+                new_rating = round(((old_rating * old_total) + data.rating) / new_total, 2)
+                prof.total_reviews = new_total
+                prof.rating        = new_rating
             await apply_review_score(db, str(b.electrician_id), data.rating, b.id, comment=data.comment)
 
         await db.commit()
