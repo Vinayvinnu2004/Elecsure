@@ -76,11 +76,3 @@ async def chatbot_config():
     }
 
 
-@router.get("/hybridaction/zybTrackerStatisticsAction")
-async def dummy_tracker_silencer(request: Request):
-    """Handles tracking pings from certain development tools (like HBuilderX)."""
-    from fastapi.responses import PlainTextResponse
-    callback = request.query_params.get("__callback__")
-    if callback:
-        return PlainTextResponse(f"{callback}({{}})")
-    return {"status": "ok"}
