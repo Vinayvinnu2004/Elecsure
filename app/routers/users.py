@@ -14,7 +14,7 @@ from app.models import (
     User, ROLE_CUSTOMER, ROLE_ELECTRICIAN, ROLE_ADMIN, 
     ServiceArea, ElectricianProfile, 
     Booking, STATUS_ASSIGNED, STATUS_ACCEPTED, STATUS_STARTED,
-    TimeSlot, SLOT_AVAILABLE, ELScoreEvent
+    TimeSlot, SLOT_AVAILABLE, SLOT_BOOKED, ELScoreEvent
 )
 from app.schemas.user import (
     UserOut, UserProfileUpdate, ElectricianProfileUpdate,
@@ -277,7 +277,6 @@ async def toggle_availability(
             ongoing_slot = r2.scalars().first()
             if ongoing_slot:
                 from app.services.el_score_service import apply_el_event
-                from app.models import ELScoreEvent
                 await apply_el_event(db, user.id, ELScoreEvent.AVAILABILITY_MID_SLOT,
                                       notes="Turned off availability mid-slot")
                 # Mark violation tracker (status finalized as FAILED after slot time completes)
