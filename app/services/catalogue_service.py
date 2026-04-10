@@ -9,12 +9,15 @@ from app.models import Service
 class CatalogueService:
     @staticmethod
     async def list_services(db: AsyncSession, category: Optional[str] = None, search: Optional[str] = None) -> List[Service]:
-        q = select(Service).where(Service.is_active == True)
+        # Return ALL services (active + inactive) so the frontend can show
+        # disabled ones with an "unavailable" badge rather than hiding them.
+        q = select(Service)
         if category:
             q = q.where(Service.category == category)
         if search:
             q = q.where(Service.name.ilike(f"%{search}%"))
-        q = q.order_by(Service.category, Service.name)
+        # Active services come first, then inactive; both sorted by name
+        q = q.order_by(Service.is_active.desc(), Service.category, Service.name)
         r = await db.execute(q)
         return list(r.scalars().all())
 

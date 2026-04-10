@@ -70,6 +70,14 @@
           <button onclick="openServicesSidebar()" class="btn btn-outline" style="width:100%;margin-bottom:12px">📂
             Browse by Category</button>
           <div id="servicesList" class="services-list"></div>
+          <!-- Shown when customer clicks a disabled service -->
+          <div id="serviceUnavailableBanner" class="hidden" style="
+            display:flex; align-items:center; gap:10px;
+            background:#fef2f2; border:1.5px solid #fca5a5;
+            color:#b91c1c; border-radius:var(--radius-sm);
+            padding:12px 14px; font-size:13px;
+            margin-top:10px; line-height:1.5;
+          "></div>
         </div>
         <div class="book-panel">
           <h3>Booking Details</h3>
@@ -328,6 +336,22 @@
 
 
 {% endblock %}
+<style>
+  /* Disabled / unavailable service rows */
+  .service-list-item.service-disabled {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+    background: var(--gray-50, #f9fafb) !important;
+    border-color: var(--gray-200, #e5e7eb) !important;
+    pointer-events: auto; /* keep click to show message */
+    user-select: none;
+  }
+  .service-list-item.service-disabled:hover {
+    border-color: var(--gray-300, #d1d5db) !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+</style>
 {% block scripts %}
 <script>
   const stripe = typeof Stripe !== 'undefined' ? Stripe('{{ stripe_pk }}') : null;
@@ -1048,16 +1072,27 @@
     const el = document.getElementById('servicesList');
     if (!el) return;
     if (!services.length) { el.innerHTML = '<div class="empty-state">No services found</div>'; return; }
-    el.innerHTML = services.map(s =>
-      '<div class="service-list-item' + (selectedServiceId === s.id ? ' selected' : '') + '" data-id="' + s.id + '" data-name="' + s.name.replace(/"/g, '&quot;') + '" data-price="' + s.base_price + '">' +
-      '<div><strong>' + s.name + '</strong><br/><small style="color:var(--gray-500)">' + s.category + '</small></div>' +
-      '<span style="font-weight:700;color:var(--navy);white-space:nowrap">₹' + s.base_price + '</span>' +
-      '</div>'
-    ).join('');
+    el.innerHTML = services.map(s => {
+      const disabled = (s.is_active === false);
+      const selectedCls = (!disabled && selectedServiceId === s.id) ? ' selected' : '';
+      const disabledCls = disabled ? ' service-disabled' : '';
+      return '<div class="service-list-item' + selectedCls + disabledCls + '" ' +
+        'data-id="' + s.id + '" data-name="' + s.name.replace(/"/g, '&quot;') + '" ' +
+        'data-price="' + s.base_price + '" data-active="' + (s.is_active ? '1' : '0') + '">' +
+        '<div>' +
+          '<strong style="' + (disabled ? 'color:var(--gray-400)' : '') + '">' + s.name + '</strong>' +
+          '<br/><small style="color:var(--gray-500)">' + s.category + '</small>' +
+        '</div>' +
+        (disabled
+          ? '<span style="font-size:11px;font-weight:700;color:#fff;background:#9ca3af;padding:3px 10px;border-radius:12px;white-space:nowrap">Not Available</span>'
+          : '<span style="font-weight:700;color:var(--navy);white-space:nowrap">₹' + s.base_price + '</span>'
+        ) +
+        '</div>';
+    }).join('');
     // Attach click handlers using dataset (no closure issues)
     el.querySelectorAll('.service-list-item').forEach(div => {
       div.addEventListener('click', function () {
-        selectService(this.dataset.id, this.dataset.name, parseFloat(this.dataset.price));
+        selectService(this.dataset.id, this.dataset.name, parseFloat(this.dataset.price), this.dataset.active === '1');
       });
     });
   }
@@ -1070,7 +1105,25 @@
     renderServices(filtered);
   }
 
-  function selectService(id, name, price) {
+  function selectService(id, name, price, isActive) {
+    // isActive may be boolean true/false or the string '1'/'0'
+    const active = (isActive === true || isActive === 1 || isActive === '1');
+    if (!active) {
+      showToast('⚠️ This service is not available. Please choose a different service.', 'error');
+      // Show inline banner below the services list
+      const banner = document.getElementById('serviceUnavailableBanner');
+      if (banner) {
+        banner.innerHTML = '<span style="font-size:18px">🚫</span> <strong>"' + name + '"</strong> is currently not available. Please select a different service.';
+        banner.classList.remove('hidden');
+        setTimeout(() => banner.classList.add('hidden'), 6000);
+      }
+      selectedServiceId = null;
+      document.getElementById('selectedService').classList.add('hidden');
+      return;
+    }
+    // Hide banner if a valid service is chosen
+    const banner = document.getElementById('serviceUnavailableBanner');
+    if (banner) banner.classList.add('hidden');
     selectedServiceId = id;
     const el = document.getElementById('selectedService');
     el.innerHTML = '<strong>' + name + '</strong> — ₹' + price;
@@ -1089,9 +1142,21 @@
       s.name.toLowerCase().includes(serviceName.toLowerCase().slice(0, 15))
     );
     if (svc) {
-      selectService(svc.id, svc.name, svc.base_price);
-      document.getElementById('serviceSearch').value = svc.name;
-      renderServices([svc]);
+      if (!svc.is_active) {
+        // Service exists but is disabled — show unavailable message
+        document.getElementById('serviceSearch').value = svc.name;
+        renderServices([svc]);
+        showToast('⚠️ This service is not available. Please choose a different service.', 'error');
+        const banner = document.getElementById('serviceUnavailableBanner');
+        if (banner) {
+          banner.innerHTML = '<span style="font-size:18px">🚫</span> <strong>"' + svc.name + '"</strong> is currently not available. Please select a different service.';
+          banner.classList.remove('hidden');
+        }
+      } else {
+        selectService(svc.id, svc.name, svc.base_price, true);
+        document.getElementById('serviceSearch').value = svc.name;
+        renderServices([svc]);
+      }
     } else {
       document.getElementById('serviceSearch').value = serviceName;
       filterServices(serviceName);
@@ -1210,6 +1275,16 @@
       return;
     }
     if (!selectedServiceId) { showToast('Please select a service first', 'error'); return; }
+    // Guard: block if the selected service has been disabled since page load
+    const _selSvc = allServices.find(s => s.id === selectedServiceId);
+    if (_selSvc && !_selSvc.is_active) {
+      showToast('⚠️ This service is not available. Please choose a different service.', 'error');
+      selectedServiceId = null;
+      document.getElementById('selectedService').classList.add('hidden');
+      renderServices(allServices);
+      btn.disabled = false; btn.textContent = 'Confirm Booking';
+      return;
+    }
     const pin = document.getElementById('bookPincodeSelect').value;
     if (!pin) { showToast('Please select a pincode', 'error'); return; }
     const btn = document.getElementById('bookBtn');
