@@ -41,16 +41,6 @@ async def get_earnings(user: User = Depends(require_electrician), db: AsyncSessi
         restriction_message=message
     )
 
-@router.post("/clear-commission-mock", response_model=MessageOut)
-async def clear_commission_mock(amount: float, user: User = Depends(require_electrician), db: AsyncSession = Depends(get_db)):
-    """Mock endpoint to clear commission due (as if payment happened)."""
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be positive")
-        
-    success = await clear_commission_due(db, str(user.id), amount)
-    if success:
-        return MessageOut(message=f"Commission cleared by {amount}. Updated status reflected immediately.")
-    raise HTTPException(status_code=500, detail="Failed to clear commission")
 
 @router.get("/history")
 async def get_earnings_history(user: User = Depends(require_electrician), db: AsyncSession = Depends(get_db)):
