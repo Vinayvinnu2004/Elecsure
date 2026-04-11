@@ -86,19 +86,34 @@ class Settings(BaseSettings):
         return v
 
     @computed_field
-    @property
-    def async_database_url(self) -> str:
-        # Prefer DATABASE_URL if it's a proper MySQL connection string
-        if self.DATABASE_URL and self.DATABASE_URL.strip().startswith("mysql+aiomysql://"):
-            return self.DATABASE_URL
-        
-        # Otherwise, build from individual components
-        url = (
-            f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
-            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
-        )
-        return url.replace("@localhost:", "@127.0.0.1:")
-
+   @computed_field
+@property
+def async_database_url(self) -> str:
+    """Build database URL with proper handling of environment variables."""
+    # Detailed logging for debugging
+    print(f"DEBUG: Raw DATABASE_URL = '{self.DATABASE_URL}'")
+    print(f"DEBUG: Raw DATABASE_URL repr = {repr(self.DATABASE_URL)}")
+    
+    # Strip whitespace from DATABASE_URL
+    db_url = self.DATABASE_URL.strip() if self.DATABASE_URL else ""
+    
+    print(f"DEBUG: Stripped DATABASE_URL = '{db_url}'")
+    print(f"DEBUG: Starts with mysql+aiomysql:// ? {db_url.startswith('mysql+aiomysql://')}")
+    print(f"DEBUG: DB_HOST = {self.DB_HOST}")
+    print(f"DEBUG: DB_PORT = {self.DB_PORT}")
+    
+    # Prefer DATABASE_URL if it's a proper MySQL connection string
+    if db_url and db_url.startswith("mysql+aiomysql://"):
+        print(f"✅ USING DATABASE_URL")
+        return db_url
+    
+    # Otherwise, build from individual components
+    print(f"⚠️ FALLING BACK TO DB_HOST/PORT")
+    url = (
+        f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
+        f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+    )
+    return url.replace("@localhost:", "@127.0.0.1:")
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
