@@ -85,8 +85,8 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be at least 32 characters.")
         return v
 
-    @computed_field
-   @computed_field
+
+@computed_field
 @property
 def async_database_url(self) -> str:
     """Build database URL with proper handling of environment variables."""
