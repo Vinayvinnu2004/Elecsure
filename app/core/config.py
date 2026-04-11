@@ -88,16 +88,16 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def async_database_url(self) -> str:
-        if self.DATABASE_URL and self.DATABASE_URL.startswith("mysql+aiomysql://"):
-            url = self.DATABASE_URL
-        else:
-            url = (
-                f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
-                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
-            )
-        # Always replace localhost → 127.0.0.1 to avoid Windows IPv6 DNS delay
+        # Prefer DATABASE_URL if it's a proper MySQL connection string
+        if self.DATABASE_URL and self.DATABASE_URL.strip().startswith("mysql+aiomysql://"):
+            return self.DATABASE_URL
+        
+        # Otherwise, build from individual components
+        url = (
+            f"mysql+aiomysql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
+        )
         return url.replace("@localhost:", "@127.0.0.1:")
-
 
 @lru_cache
 def get_settings() -> Settings:
